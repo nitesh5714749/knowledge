@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zepto: Debezium at Scale — Full Flow</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161921;
+    --border: #252a36;
+    --blue: #4a9eed;
+    --green: #22c55e;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --cyan: #06b6d4;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+
+  .page-title {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .page-sub {
+    text-align: center;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-bottom: 48px;
+    letter-spacing: 1px;
+  }
+
+  /* ── FLOW CONTAINER ── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* ── SECTION LABELS ── */
+  .section-row {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 0;
+  }
+  .section-tag {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 12px 8px;
+    border-radius: 6px;
+    min-width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .tag-blue  { background: rgba(74,158,237,0.12); color: var(--blue); border: 1px solid rgba(74,158,237,0.25); }
+  .tag-green { background: rgba(34,197,94,0.12);  color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+  .tag-orange{ background: rgba(245,158,11,0.12); color: var(--orange); border: 1px solid rgba(245,158,11,0.25); }
+  .tag-red   { background: rgba(239,68,68,0.12);  color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+  .tag-purple{ background: rgba(139,92,246,0.12); color: var(--purple); border: 1px solid rgba(139,92,246,0.25); }
+  .tag-cyan  { background: rgba(6,182,212,0.12);  color: var(--cyan); border: 1px solid rgba(6,182,212,0.25); }
+
+  /* ── CARDS ── */
+  .card-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 0;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    position: relative;
+    animation: fadeIn 0.4s ease both;
+  }
+  .card:hover { border-color: var(--muted); transition: border-color 0.2s; }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .card-body {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #94a3b8;
+    font-family: var(--sans);
+    font-weight: 400;
+  }
+
+  .card.blue   { border-left: 3px solid var(--blue);   } .card.blue   .card-title { color: var(--blue); }
+  .card.green  { border-left: 3px solid var(--green);  } .card.green  .card-title { color: var(--green); }
+  .card.orange { border-left: 3px solid var(--orange); } .card.orange .card-title { color: var(--orange); }
+  .card.red    { border-left: 3px solid var(--red);    } .card.red    .card-title { color: var(--red); }
+  .card.purple { border-left: 3px solid var(--purple); } .card.purple .card-title { color: var(--purple); }
+  .card.cyan   { border-left: 3px solid var(--cyan);   } .card.cyan   .card-title { color: var(--cyan); }
+
+  /* inline code */
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #cbd5e1;
+  }
+
+  /* badges */
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .badge-red    { background: rgba(239,68,68,0.2);   color: var(--red); }
+  .badge-green  { background: rgba(34,197,94,0.2);   color: var(--green); }
+  .badge-orange { background: rgba(245,158,11,0.2);  color: var(--orange); }
+  .badge-blue   { background: rgba(74,158,237,0.2);  color: var(--blue); }
+
+  /* ── ARROW ── */
+  .arrow-down {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin: 4px 0;
+    width: 100%;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 28px;
+    background: linear-gradient(to bottom, var(--border), var(--muted));
+  }
+  .arrow-head {
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 10px solid var(--muted);
+  }
+  .arrow-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin: 4px 0 2px;
+    text-transform: uppercase;
+  }
+
+  /* ── PROBLEM / SOLUTION SPLIT ── */
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    width: 100%;
+  }
+  .split-panel {
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .split-panel.bad  { background: rgba(239,68,68,0.05);  border-color: rgba(239,68,68,0.2); }
+  .split-panel.good { background: rgba(34,197,94,0.05);  border-color: rgba(34,197,94,0.2); }
+  .split-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .split-title.bad  { color: var(--red); }
+  .split-title.good { color: var(--green); }
+
+  /* ── CODE BLOCK ── */
+  .codeblock {
+    background: #0a0c10;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #94a3b8;
+    margin: 8px 0 0;
+    overflow-x: auto;
+  }
+  .codeblock .kw  { color: #7dd3fc; }
+  .codeblock .val { color: #86efac; }
+  .codeblock .str { color: #fda4af; }
+  .codeblock .cmt { color: #475569; }
+  .codeblock .err { color: var(--red); font-weight: 700; }
+  .codeblock .ok  { color: var(--green); font-weight: 700; }
+
+  /* ── METRICS ROW ── */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+  }
+  .metric-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .metric-num {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .metric-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ── BUFFER VISUAL ── */
+  .buf-flow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 10px 0 6px;
+  }
+  .buf-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .buf-dead { background: rgba(239,68,68,0.15); color: #f87171; text-decoration: line-through; }
+  .buf-live { background: rgba(34,197,94,0.2);  color: var(--green); border: 1px solid rgba(34,197,94,0.4); }
+  .buf-arrow { color: var(--muted); font-size: 14px; }
+
+  /* ── AAS METER ── */
+  .aas-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .aas-meter {
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+  }
+  .aas-meter.calm { background: rgba(34,197,94,0.06); border-color: rgba(34,197,94,0.2); }
+  .aas-meter.spike{ background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.2); }
+  .aas-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .aas-meter.calm  .aas-title { color: var(--green); }
+  .aas-meter.spike .aas-title { color: var(--red); }
+  .bar-track { background: rgba(255,255,255,0.06); border-radius: 4px; height: 12px; width: 100%; overflow: hidden; margin: 4px 0; }
+  .bar-fill  { height: 100%; border-radius: 4px; }
+  .bar-calm  { width: 8%;  background: var(--green); }
+  .bar-spike { width: 95%; background: var(--red); animation: pulse 1.5s ease-in-out infinite alternate; }
+  @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+  .bar-label { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ── RESULT BOX ── */
+  .result-box {
+    width: 100%;
+    background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(6,182,212,0.08));
+    border: 1px solid rgba(34,197,94,0.3);
+    border-radius: 14px;
+    padding: 20px 24px;
+    text-align: center;
+    margin-top: 8px;
+  }
+  .result-box h3 {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+  .result-box p {
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── STEP NUMBER ── */
+  .step-num {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 1px;
+  }
+  .step-num.blue   { color: var(--blue);   border: 1px solid rgba(74,158,237,0.4); }
+  .step-num.orange { color: var(--orange); border: 1px solid rgba(245,158,11,0.4); }
+  .step-num.red    { color: var(--red);    border: 1px solid rgba(239,68,68,0.4); }
+  .step-num.purple { color: var(--purple); border: 1px solid rgba(139,92,246,0.4); }
+  .step-num.green  { color: var(--green);  border: 1px solid rgba(34,197,94,0.4); }
+  .step-num.cyan   { color: var(--cyan);   border: 1px solid rgba(6,182,212,0.4); }
+
+  hr.divider {
+    border: none;
+    border-top: 1px dashed var(--border);
+    margin: 6px 0;
+  }
+
+  .tag-inline {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">Zepto · Debezium at Scale</div>
+<div class="page-sub">CDC PIPELINE DEEP DIVE — PROBLEM → ROOT CAUSE → FIX</div>
+
+<div class="flow">
+
+  <!-- ═══ SECTION 1: SOURCE ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-blue">Source DB</div>
+    <div class="card-area">
+      <div class="card blue" style="position:relative">
+        <span class="step-num blue">STEP 01</span>
+        <div class="card-title">Postgres — Source of Truth</div>
+        <div class="card-body">
+          Zepto's transactional database stores orders, inventory, and state transitions.
+          An order like <code>id=123</code> can go through <code>STATE_A → B → C → D</code> in milliseconds during peak traffic.
+          Every row-level change (INSERT / UPDATE / DELETE) is first written to the <strong style="color:#e2e8f0">WAL (Write Ahead Log)</strong> before hitting the actual table.
+        </div>
+        <div class="codeblock" style="margin-top:10px">
+          <span class="cmt">-- Order 123 changes 4 times in milliseconds</span><br>
+          UPDATE orders SET state = <span class="str">'STATE_A'</span> WHERE id = 123; <span class="cmt">-- 10:00:00.001</span><br>
+          UPDATE orders SET state = <span class="str">'STATE_B'</span> WHERE id = 123; <span class="cmt">-- 10:00:00.002</span><br>
+          UPDATE orders SET state = <span class="str">'STATE_C'</span> WHERE id = 123; <span class="cmt">-- 10:00:00.003</span><br>
+          UPDATE orders SET state = <span class="str">'STATE_D'</span> WHERE id = 123; <span class="cmt">-- 10:00:00.004</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">WAL stream</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ SECTION 2: DEBEZIUM ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-cyan">Debezium</div>
+    <div class="card-area">
+      <div class="card cyan" style="position:relative">
+        <span class="step-num cyan">STEP 02</span>
+        <div class="card-title">Debezium — CDC Engine</div>
+        <div class="card-body">
+          Debezium reads the Postgres WAL like a live feed — it sees every change in order, without touching actual tables.
+          It converts each WAL entry into a structured <strong style="color:#e2e8f0">change event</strong> and publishes it to Kafka.
+          Zero impact on the source DB's query performance.
+        </div>
+        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:200px; background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.2); border-radius:8px; padding:10px 12px;">
+            <div style="font-size:11px; font-weight:700; color:var(--cyan); margin-bottom:4px;">CHANGE EVENT (Kafka message)</div>
+            <div class="codeblock" style="margin:0; font-size:11px;">
+              { <span class="kw">op</span>: <span class="str">"u"</span>, <span class="cmt">// update</span><br>
+              &nbsp;&nbsp;<span class="kw">before</span>: { state: <span class="str">"STATE_A"</span> },<br>
+              &nbsp;&nbsp;<span class="kw">after</span>:  { state: <span class="str">"STATE_B"</span> },<br>
+              &nbsp;&nbsp;<span class="kw">ts_ms</span>: <span class="val">1700000000002</span> }
+            </div>
+          </div>
+          <div style="flex:1; min-width:200px; background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.2); border-radius:8px; padding:10px 12px;">
+            <div style="font-size:11px; font-weight:700; color:var(--cyan); margin-bottom:6px;">WHY WAL?</div>
+            <div class="card-body" style="font-size:13px;">
+              ✓ No extra DB load<br>
+              ✓ Captures every change<br>
+              ✓ Ordered & consistent<br>
+              ✓ Works with existing tables
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">Kafka topic</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ SECTION 3: KAFKA ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-purple">Kafka</div>
+    <div class="card-area">
+      <div class="card purple" style="position:relative">
+        <span class="step-num purple">STEP 03</span>
+        <div class="card-title">Kafka — Event Bus</div>
+        <div class="card-body">
+          All 4 change events for <code>id=123</code> land in the same Kafka topic partition, in order.
+          The JDBC Sink Connector polls Kafka and groups these into a <strong style="color:#e2e8f0">batch</strong> to write to Postgres.
+          During peak traffic, batches can contain hundreds of events — many of them for the same order ID.
+        </div>
+        <div style="margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <span style="font-family:var(--mono); font-size:11px; color:var(--muted)">PARTITION:</span>
+          <span class="buf-pill buf-dead" style="text-decoration:none; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3);">id=123 STATE_A</span>
+          <span class="buf-arrow">→</span>
+          <span class="buf-pill buf-dead" style="text-decoration:none; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3);">id=123 STATE_B</span>
+          <span class="buf-arrow">→</span>
+          <span class="buf-pill buf-dead" style="text-decoration:none; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3);">id=123 STATE_C</span>
+          <span class="buf-arrow">→</span>
+          <span class="buf-pill buf-dead" style="text-decoration:none; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3);">id=123 STATE_D</span>
+          <span class="buf-arrow">→</span>
+          <span class="buf-pill buf-dead" style="text-decoration:none; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3);">id=456 STATE_A</span>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--muted)">… batched together</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">batch flush</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ SECTION 4: THE PROBLEM ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-red">Problem</div>
+    <div class="card-area">
+      <div class="card red" style="position:relative">
+        <span class="step-num red">STEP 04 — THE PROBLEM</span>
+        <div class="card-title">reWriteBatchedInserts=true + Duplicate Keys = CRASH</div>
+        <div class="card-body">
+          The JDBC driver flag <code>reWriteBatchedInserts=true</code> merges all inserts in a batch into a single multi-row SQL statement for performance.
+          But when the same primary key appears more than once (STATE_A and STATE_D for <code>id=123</code>),
+          Postgres cannot resolve which value to use in the <code>ON CONFLICT DO UPDATE</code> clause — and refuses entirely.
+        </div>
+
+        <div class="split" style="margin-top:12px">
+          <div class="split-panel bad">
+            <div class="split-title bad">❌ Without Dedup — CRASHES</div>
+            <div class="codeblock" style="margin:0; font-size:11px;">
+              <span class="kw">INSERT INTO</span> orders <span class="kw">VALUES</span><br>
+              &nbsp;&nbsp;(123, <span class="str">'STATE_A'</span>),<br>
+              &nbsp;&nbsp;(123, <span class="str">'STATE_B'</span>), <span class="cmt">← duplicate!</span><br>
+              &nbsp;&nbsp;(123, <span class="str">'STATE_C'</span>), <span class="cmt">← duplicate!</span><br>
+              &nbsp;&nbsp;(123, <span class="str">'STATE_D'</span>)  <span class="cmt">← duplicate!</span><br>
+              <span class="kw">ON CONFLICT</span> (id) <span class="kw">DO UPDATE</span>...<br><br>
+              <span class="err">ERROR: ON CONFLICT DO UPDATE command</span><br>
+              <span class="err">cannot affect row a second time.</span>
+            </div>
+          </div>
+          <div class="split-panel" style="background:rgba(245,158,11,0.05); border-color:rgba(245,158,11,0.25);">
+            <div class="split-title" style="color:var(--orange);">⚠️ Root Cause</div>
+            <div class="card-body" style="font-size:13px; margin-top:4px;">
+              Postgres evaluates <code>ON CONFLICT</code> against the <em>original table</em> — not row by row within the VALUES list.<br><br>
+              When it sees <code>id=123</code> four times, it has no way to know which value should "win" — so it rejects the entire statement.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Write Amplification -->
+      <div class="card orange" style="position:relative; margin-top:10px;">
+        <span class="step-num orange">STEP 04b — WRITE AMPLIFICATION</span>
+        <div class="card-title">Even Without Crash: HOT Updates Fail → Index Write Explosion</div>
+        <div class="card-body">
+          Even when not crashing, rapid state changes on the same row cause Postgres's <strong style="color:#e2e8f0">HOT (Heap Only Tuple)</strong> optimization to fail.
+          HOT skips index updates if the updated column has no index AND the new row fits on the same heap page.
+          Since <code>state</code> is indexed (you query by state constantly), HOT never applies — every update rewrites all indexes.
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--orange); margin-bottom:6px;">4 STATE CHANGES = 4x WRITES</div>
+            <div class="codeblock" style="font-size:11px;">
+              STATE_A write:<br>
+              &nbsp;&nbsp;<span class="cmt">1 heap write</span><br>
+              &nbsp;&nbsp;<span class="cmt">+ N index writes</span><br>
+              STATE_B write:<br>
+              &nbsp;&nbsp;<span class="cmt">1 heap write</span><br>
+              &nbsp;&nbsp;<span class="cmt">+ N index writes</span><br>
+              STATE_C, D... same<br><br>
+              <span class="err">Total: 4 heap + 4N index writes</span><br>
+              <span class="cmt">for 1 logical change!</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--orange); margin-bottom:6px;">HOT CONDITIONS (both must be true)</div>
+            <div style="font-size:13px; line-height:1.8; color:#94a3b8;">
+              ✓ No indexed column changed<br>
+              ✓ New row fits on same page<br><br>
+              In CDC workloads:<br>
+              <span style="color:var(--red);">✗ <code>state</code> column IS indexed</span><br>
+              <span style="color:var(--red);">✗ Pages fill up from rapid writes</span><br><br>
+              → HOT <strong style="color:var(--red);">never applies</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">AAS spike</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ SECTION 5: AAS SPIKE ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-red">Impact</div>
+    <div class="card-area">
+      <div class="card red" style="position:relative;">
+        <span class="step-num red">STEP 05 — PEAK TRAFFIC IMPACT</span>
+        <div class="card-title">AAS (Average Active Sessions) Explodes on COMMIT</div>
+        <div class="card-body">
+          During peak traffic, hundreds of write batches hit Postgres simultaneously.
+          Every batch ends with a <strong style="color:#e2e8f0">COMMIT</strong> — which forces a disk flush (WAL write).
+          Disk I/O becomes the bottleneck. Sessions pile up waiting to commit → AAS spikes → death spiral.
+        </div>
+        <div class="aas-row">
+          <div class="aas-meter calm">
+            <div class="aas-title">Normal Time</div>
+            <div class="bar-label">AAS = 1 (sessions completing fast)</div>
+            <div class="bar-track"><div class="bar-fill bar-calm"></div></div>
+            <div style="font-size:12px; color:#94a3b8; margin-top:6px;">COMMIT → done in ~1ms → session frees up. Disk keeps up easily.</div>
+          </div>
+          <div class="aas-meter spike">
+            <div class="aas-title">Peak Traffic</div>
+            <div class="bar-label">AAS = 50-200+ (sessions piling up)</div>
+            <div class="bar-track"><div class="bar-fill bar-spike"></div></div>
+            <div style="font-size:12px; color:#94a3b8; margin-top:6px;">COMMIT → waiting 50ms → 100ms → more arrive → disk overwhelmed → death spiral 💀</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">the fix</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ SECTION 6: REDUCTION BUFFER ═══ -->
+  <div class="section-row">
+    <div class="section-tag tag-green">The Fix</div>
+    <div class="card-area">
+      <div class="card green" style="position:relative;">
+        <span class="step-num green">STEP 06 — REDUCTION BUFFER</span>
+        <div class="card-title">In-Memory Deduplication Before Flush</div>
+        <div class="card-body">
+          The Reduction Buffer sits between Kafka and Postgres. Before flushing any batch to the database,
+          it groups events by primary key and keeps only the <strong style="color:#e2e8f0">latest event per ID</strong>.
+          Intermediate states are discarded — the database only ever sees the final truth.
+        </div>
+
+        <div style="margin-top:14px;">
+          <div style="font-size:11px; font-weight:700; color:var(--muted); margin-bottom:6px; letter-spacing:1px;">BATCH IN (6 events)</div>
+          <div class="buf-flow">
+            <span class="buf-pill buf-dead">id=123 STATE_A</span>
+            <span class="buf-arrow">→</span>
+            <span class="buf-pill buf-dead">id=123 STATE_B</span>
+            <span class="buf-arrow">→</span>
+            <span class="buf-pill buf-dead">id=123 STATE_C</span>
+            <span class="buf-arrow">→</span>
+            <span class="buf-pill buf-live">id=123 STATE_D ✓</span>
+            <span class="buf-arrow" style="color:var(--border);">|</span>
+            <span class="buf-pill buf-live">id=456 STATE_A ✓</span>
+            <span class="buf-arrow" style="color:var(--border);">|</span>
+            <span class="buf-pill buf-live">id=789 STATE_B ✓</span>
+          </div>
+          <div style="font-size:11px; font-weight:700; color:var(--green); margin: 8px 0 6px; letter-spacing:1px;">AFTER DEDUP — ONLY 3 ROWS TO POSTGRES</div>
+          <div class="codeblock">
+            <span class="kw">INSERT INTO</span> orders <span class="kw">VALUES</span><br>
+            &nbsp;&nbsp;(123, <span class="str">'STATE_D'</span>), <span class="ok">✓ no duplicates</span><br>
+            &nbsp;&nbsp;(456, <span class="str">'STATE_A'</span>),<br>
+            &nbsp;&nbsp;(789, <span class="str">'STATE_B'</span>)<br>
+            <span class="kw">ON CONFLICT</span> (id) <span class="kw">DO UPDATE SET</span> state = EXCLUDED.state;<br><br>
+            <span class="ok">-- reWriteBatchedInserts=true now works perfectly!</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div style="margin-top:12px;">
+        <div class="metrics">
+          <div class="metric-box">
+            <div class="metric-num" style="color:var(--green);">80%</div>
+            <div class="metric-label">Fewer DB writes during peak</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-num" style="color:var(--cyan);">1</div>
+            <div class="metric-label">Heap write per unique row</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-num" style="color:var(--blue);">1</div>
+            <div class="metric-label">Index write per unique row</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down"><div class="arrow-line"></div><div class="arrow-label">result</div><div class="arrow-head"></div></div>
+
+  <!-- ═══ FINAL RESULT ═══ -->
+  <div class="result-box">
+    <h3>✓ Pipeline Stable at Scale</h3>
+    <p>
+      Reduction Buffer + <code>reWriteBatchedInserts=true</code> work together:<br>
+      deduplication eliminates the duplicate-key crash, and batched inserts give maximum Postgres write throughput.<br>
+      AAS stays low, HOT updates apply where possible, and the DB handles peak traffic without a death spiral.
+    </p>
+    <div style="display:flex; justify-content:center; gap:16px; margin-top:14px; flex-wrap:wrap;">
+      <span class="badge badge-green">No Crash</span>
+      <span class="badge badge-green">Low AAS</span>
+      <span class="badge badge-green">HOT Updates Apply</span>
+      <span class="badge badge-green">Min Write Amplification</span>
+      <span class="badge badge-blue">reWriteBatchedInserts ✓</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
