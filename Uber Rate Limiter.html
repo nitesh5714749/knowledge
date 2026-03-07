@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRL — Simple Walkthrough</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: #f5f7fa;
+    font-family: 'Inter', sans-serif;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #1a1a2e;
+    color: white;
+    padding: 32px 40px;
+  }
+  header h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+  header p  { font-size: 14px; color: #94a3b8; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+
+  /* story box */
+  .story {
+    background: #fff8e1;
+    border-left: 5px solid #f59e0b;
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    font-size: 15px;
+    line-height: 1.8;
+  }
+  .story strong { color: #92400e; }
+
+  /* step cards */
+  .steps { display: flex; flex-direction: column; gap: 0; }
+
+  .step {
+    display: flex;
+    gap: 0;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all .4s ease;
+    margin-bottom: 0;
+  }
+  .step.visible { opacity:1; transform:none; }
+
+  /* connector line on left */
+  .step-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 56px;
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .step-line {
+    width: 3px;
+    flex: 1;
+    min-height: 24px;
+    margin: 4px 0;
+  }
+
+  .step-body {
+    flex: 1;
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    border: 1.5px solid transparent;
+  }
+
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .step-emoji { font-size: 26px; }
+  .step-title { font-size: 17px; font-weight: 700; }
+  .step-who {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-left: auto;
+    font-weight: 600;
+  }
+
+  .step-text {
+    font-size: 14px;
+    color: #475569;
+    line-height: 1.8;
+    margin-bottom: 12px;
+  }
+
+  /* visual mini diagram inside step */
+  .mini-diagram {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #334155;
+    line-height: 2;
+    border: 1px solid #e2e8f0;
+    white-space: pre-wrap;
+  }
+  .mini-diagram .hi  { color: #10b981; font-weight: 600; }
+  .mini-diagram .red { color: #ef4444; font-weight: 600; }
+  .mini-diagram .yel { color: #f59e0b; font-weight: 600; }
+  .mini-diagram .blu { color: #3b82f6; font-weight: 600; }
+
+  /* colour themes per step */
+  .s1 .step-num { background:#dbeafe; color:#1d4ed8; }
+  .s1 .step-line { background:#bfdbfe; }
+  .s1 .step-body { border-color:#bfdbfe; }
+  .s1 .step-who  { background:#dbeafe; color:#1d4ed8; }
+
+  .s2 .step-num { background:#d1fae5; color:#065f46; }
+  .s2 .step-line { background:#a7f3d0; }
+  .s2 .step-body { border-color:#a7f3d0; }
+  .s2 .step-who  { background:#d1fae5; color:#065f46; }
+
+  .s3 .step-num { background:#fef3c7; color:#92400e; }
+  .s3 .step-line { background:#fde68a; }
+  .s3 .step-body { border-color:#fde68a; }
+  .s3 .step-who  { background:#fef3c7; color:#92400e; }
+
+  .s4 .step-num { background:#ede9fe; color:#5b21b6; }
+  .s4 .step-line { background:#ddd6fe; }
+  .s4 .step-body { border-color:#ddd6fe; }
+  .s4 .step-who  { background:#ede9fe; color:#5b21b6; }
+
+  .s5 .step-num { background:#fee2e2; color:#991b1b; }
+  .s5 .step-line { background:#fecaca; }
+  .s5 .step-body { border-color:#fecaca; }
+  .s5 .step-who  { background:#fee2e2; color:#991b1b; }
+
+  .s6 .step-num { background:#d1fae5; color:#065f46; }
+  .s6 .step-line { background:transparent; }
+  .s6 .step-body { border-color:#6ee7b7; background:#f0fdf4; }
+  .s6 .step-who  { background:#d1fae5; color:#065f46; }
+
+  /* nav buttons */
+  .nav {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 10px 22px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-primary {
+    background: #1a1a2e;
+    color: white;
+  }
+  .btn-primary:hover { background: #2d2d4e; }
+  .btn-secondary {
+    background: white;
+    color: #1a1a2e;
+    border: 2px solid #e2e8f0;
+  }
+  .btn-secondary:hover { border-color: #1a1a2e; }
+
+  .progress-bar {
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #1a1a2e;
+    border-radius: 4px;
+    transition: width .4s ease;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* summary */
+  .summary {
+    background: #1a1a2e;
+    color: white;
+    border-radius: 16px;
+    padding: 28px;
+    margin-top: 16px;
+    display: none;
+  }
+  .summary.show { display: block; }
+  .summary h2 { font-size: 20px; margin-bottom: 16px; color: #6ee7b7; }
+  .summary-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #cbd5e1;
+  }
+  .summary-row .ico { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .summary-row strong { color: white; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚦 How GRL Actually Works</h1>
+  <p>One concrete example, step by step — click Next to walk through it</p>
+</header>
+
+<div class="container">
+
+  <!-- The story setup -->
+  <div class="story">
+    <strong>📖 The scenario:</strong> Uber has a <strong>Trip Service</strong> that other services call to get trip details.
+    It can safely handle <strong>1,000 requests/sec</strong>. One day, the <strong>Notification Service</strong> has a bug
+    and starts sending <strong>5,000 requests/sec</strong> — a 5× flood. Without GRL, Trip Service crashes.
+    <br><br>
+    Let's watch GRL handle it, step by step. 👇
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+
+  <!-- Nav -->
+  <div class="nav">
+    <button class="btn btn-secondary" onclick="prev()">← Back</button>
+    <button class="btn btn-primary" onclick="next()" id="nextBtn">Next Step →</button>
+    <button class="btn btn-secondary" onclick="reset()">↺ Restart</button>
+  </div>
+
+  <!-- Steps -->
+  <div class="steps" id="steps">
+
+    <!-- STEP 1 -->
+    <div class="step s1" id="step-1">
+      <div class="step-left">
+        <div class="step-num">1</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">📨</div>
+          <div class="step-title">The flood begins</div>
+          <div class="step-who">Notification Service</div>
+        </div>
+        <div class="step-text">
+          The buggy Notification Service starts firing <strong>5,000 requests/second</strong> at Trip Service.
+          Every request goes through the <strong>service mesh</strong> (think of it as a security checkpoint
+          between every two services at Uber). The RL Client sitting in that mesh starts counting…
+        </div>
+        <div class="mini-diagram">
+<span class="blu">Notification Service</span>  ──5000 req/s──▶  <span class="hi">[RL Client in Mesh]</span>  ──▶  Trip Service
+
+Limit configured: <span class="hi">1,000 req/s</span>
+Currently seeing: <span class="red">5,000 req/s</span>   ← 5× over!</div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step s2" id="step-2">
+      <div class="step-left">
+        <div class="step-num">2</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">📊</div>
+          <div class="step-title">Tier 1: RL Client counts & reports</div>
+          <div class="step-who">Mesh Layer</div>
+        </div>
+        <div class="step-text">
+          The <strong>RL Client</strong> (Tier 1) lives inside the service mesh sidecar. Every few seconds it:
+          <br>• Counts how many requests it's seen
+          <br>• Sends that number UP to the Zone Aggregator
+          <br><br>
+          Right now it doesn't block anything yet — it's still using its <em>last known limit</em> from the controller.
+          It reports: <strong>"I'm seeing 5,000 req/s in zone us-east-1a"</strong>
+        </div>
+        <div class="mini-diagram">
+<span class="hi">[RL Client]</span> counts 5,000 req/s
+
+        Reports every ~1 second ↑
+        
+<span class="yel">[Zone Aggregator us-east-1a]</span>  ←  "seeing 5,000/s"</div>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step s3" id="step-3">
+      <div class="step-left">
+        <div class="step-num">3</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🗂️</div>
+          <div class="step-title">Tier 2: Zone Aggregator adds it all up</div>
+          <div class="step-who">Zone Aggregator</div>
+        </div>
+        <div class="step-text">
+          Uber runs <strong>many instances</strong> of the RL Client (one per pod/container).
+          The Zone Aggregator collects from ALL of them in the zone and adds them up.
+          Then it forwards the total up to the Regional Controller.
+        </div>
+        <div class="mini-diagram">
+Inputs from all RL Clients in zone us-east-1a:
+  RL Client pod-1  →  <span class="yel">1,700 req/s</span>
+  RL Client pod-2  →  <span class="yel">1,800 req/s</span>
+  RL Client pod-3  →  <span class="yel">1,500 req/s</span>
+                       ──────────────
+  TOTAL reported ↑     <span class="red">5,000 req/s</span>
+
+<span class="yel">[Zone Aggregator]</span>  →→  <span class="blu">[Regional Controller]</span>
+  "Trip Service is getting 5,000 req/s. Limit is 1,000."</div>
+      </div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="step s4" id="step-4">
+      <div class="step-left">
+        <div class="step-num">4</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🧠</div>
+          <div class="step-title">Tier 3: Regional Controller does the math</div>
+          <div class="step-who">Regional Controller</div>
+        </div>
+        <div class="step-text">
+          The Regional Controller (the brain) receives the report and calculates:
+          <br><br>
+          <strong>"They're at 500% of the limit. I need to tell each RL Client to only allow
+          20% of traffic through — shed the other 80%."</strong>
+          <br><br>
+          It then pushes this new instruction back DOWN to all Zone Aggregators → RL Clients.
+        </div>
+        <div class="mini-diagram">
+<span class="blu">[Regional Controller]</span> calculates:
+
+  Configured limit :  <span class="hi">1,000 req/s</span>
+  Current traffic  :  <span class="red">5,000 req/s</span>
+  Overload ratio   :  <span class="red">5×</span>
+  
+  Decision: each RL Client should pass only <span class="hi">200 req/s</span>
+             and DROP the rest (80% drop rate)
+
+  Pushes instruction ↓↓ to all RL Clients</div>
+      </div>
+    </div>
+
+    <!-- STEP 5 -->
+    <div class="step s5" id="step-5">
+      <div class="step-left">
+        <div class="step-num">5</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🚫</div>
+          <div class="step-title">Tier 1: RL Client enforces — drops 80%</div>
+          <div class="step-who">Mesh Layer (again)</div>
+        </div>
+        <div class="step-text">
+          The RL Client receives the new limit and immediately starts enforcing it.
+          For every 10 incoming requests, it <strong>lets 2 through</strong> and <strong>drops 8</strong>
+          right there at the mesh — they never even reach Trip Service.
+          <br><br>
+          This is <strong>probabilistic</strong> — it doesn't block the first 200 and reject the rest.
+          It randomly drops 80% so no single caller is fully blocked.
+        </div>
+        <div class="mini-diagram">
+<span class="red">Notification Service</span> sends 10 requests:
+
+  req-1  → <span class="hi">✅ PASS</span>  (reaches Trip Service)
+  req-2  → <span class="red">❌ DROP</span> (blocked at mesh, 429 returned)
+  req-3  → <span class="red">❌ DROP</span>
+  req-4  → <span class="hi">✅ PASS</span>
+  req-5  → <span class="red">❌ DROP</span>
+  req-6  → <span class="red">❌ DROP</span>
+  req-7  → <span class="red">❌ DROP</span>
+  req-8  → <span class="red">❌ DROP</span>
+  req-9  → <span class="hi">✅ PASS</span>  (roughly 2 out of 10 get through)
+  req-10 → <span class="red">❌ DROP</span>
+
+<span class="hi">Trip Service only sees ~1,000 req/s</span>  ← safe!</div>
+      </div>
+    </div>
+
+    <!-- STEP 6 -->
+    <div class="step s6" id="step-6">
+      <div class="step-left">
+        <div class="step-num">✓</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🎉</div>
+          <div class="step-title">Trip Service stays healthy</div>
+          <div class="step-who">Result</div>
+        </div>
+        <div class="step-text">
+          Trip Service never saw more than 1,000 req/s. It never crashed.
+          The loop keeps running every few seconds — if the Notification bug is fixed and traffic drops back to normal,
+          the controller recalculates and tells RL Clients to stop dropping traffic. <strong>Fully automatic.</strong>
+        </div>
+        <div class="mini-diagram">
+BEFORE GRL:
+  Notification bug  →  5,000 req/s hits Trip Service  →  <span class="red">💥 CRASH</span>
+
+AFTER GRL:
+  Notification bug  →  5,000 req/s enters mesh
+                    →  RL Client drops 80% at the edge
+                    →  1,000 req/s reaches Trip Service
+                    →  <span class="hi">✅ Trip Service is fine</span>
+
+And when the bug is fixed:
+  Traffic drops  →  Controller recalculates  →  Drop rate goes back to 0%  →  <span class="hi">✅ Normal</span></div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- Summary -->
+  <div class="summary" id="summary">
+    <h2>⚡ The Full Picture in One View</h2>
+    <div class="summary-row">
+      <div class="ico">🛡️</div>
+      <div><strong>Tier 1 — RL Client (in the mesh):</strong> Counts requests, enforces the drop rate locally. Acts instantly — no round-trip needed.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">📊</div>
+      <div><strong>Tier 2 — Zone Aggregator:</strong> Collects from all RL Clients in a zone, sums them up, sends the total to the controller.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🧠</div>
+      <div><strong>Tier 3 — Regional Controller:</strong> Sees global traffic, calculates how much to drop, pushes limits back down. Runs every ~1 second.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🎲</div>
+      <div><strong>Probabilistic shedding:</strong> Instead of hard blocking (all-or-nothing), it randomly drops a %. Smooth degradation, not a cliff.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🔄</div>
+      <div><strong>Feedback loop:</strong> Measure → Aggregate → Calculate → Push → Enforce → repeat every second. Fully automatic, no human needed.</div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const totalSteps = 6;
+  let current = 0;
+
+  function showStep(n) {
+    for (let i = 1; i <= totalSteps; i++) {
+      const el = document.getElementById('step-' + i);
+      if (i <= n) {
+        el.classList.add('visible');
+      } else {
+        el.classList.remove('visible');
+      }
+    }
+    const pct = (n / totalSteps) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+
+    const summary = document.getElementById('summary');
+    if (n === totalSteps) {
+      summary.classList.add('show');
+      document.getElementById('nextBtn').textContent = '✓ Done!';
+      document.getElementById('nextBtn').disabled = true;
+      document.getElementById('nextBtn').style.opacity = '.5';
+    } else {
+      summary.classList.remove('show');
+      document.getElementById('nextBtn').textContent = 'Next Step →';
+      document.getElementById('nextBtn').disabled = false;
+      document.getElementById('nextBtn').style.opacity = '1';
+    }
+  }
+
+  function next() {
+    if (current < totalSteps) {
+      current++;
+      showStep(current);
+      // scroll new step into view
+      const el = document.getElementById('step-' + current);
+      setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+    }
+  }
+
+  function prev() {
+    if (current > 0) {
+      current--;
+      showStep(current);
+    }
+  }
+
+  function reset() {
+    current = 0;
+    showStep(0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>
