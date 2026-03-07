@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zone Distribution — How GRL Redistributes Across Zones</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg: #080b0f;
+    --surface: #0e1117;
+    --card: #13181f;
+    --border: #1e2530;
+    --green: #00e676;
+    --red: #ff1744;
+    --yellow: #ffd600;
+    --blue: #40c4ff;
+    --purple: #ce93d8;
+    --text: #e2e8f0;
+    --muted: #4b5563;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Syne', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 28px 36px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #080b0f 60%, #0a1208);
+  }
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--green);
+    letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px;
+  }
+  header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  header p  { font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  /* ── tabs ── */
+  .tabs { display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 18px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card); color: var(--muted);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    cursor: pointer; transition: all .2s; letter-spacing: 1px;
+  }
+  .tab:hover { border-color: var(--green); color: var(--green); }
+  .tab.active { background: var(--green); color: #000; border-color: var(--green); font-weight: 700; }
+
+  /* ── scene label ── */
+  .scene-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 20px;
+  }
+  .scene-label span { color: var(--green); font-weight: 700; }
+
+  /* ── main diagram ── */
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram-wrap::before {
+    content:'';
+    position: absolute; inset:0;
+    background: radial-gradient(ellipse at 10% 50%, rgba(0,230,118,.03) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* ── global controller box ── */
+  .global-row {
+    display: flex; justify-content: center; margin-bottom: 8px;
+  }
+  .ctrl-box {
+    background: var(--card);
+    border: 1.5px solid var(--purple);
+    border-radius: 10px;
+    padding: 12px 28px;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(206,147,216,.1);
+  }
+  .ctrl-box .icon { font-size: 20px; margin-bottom: 4px; }
+  .ctrl-box .name { font-size: 13px; font-weight: 700; color: var(--purple); }
+  .ctrl-box .sub  { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .ctrl-box .limit-badge {
+    margin-top: 8px;
+    background: rgba(206,147,216,.1);
+    border: 1px solid rgba(206,147,216,.3);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--purple);
+  }
+
+  /* ── connector lines ── */
+  .connectors {
+    display: flex; justify-content: center;
+    position: relative; height: 44px; margin-bottom: 0;
+  }
+  .conn-svg { width: 100%; height: 44px; overflow: visible; }
+
+  /* ── zones row ── */
+  .zones-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .zone-col { display: flex; flex-direction: column; gap: 10px; }
+
+  /* zone aggregator */
+  .agg-box {
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    border: 1px solid;
+    transition: all .4s;
+  }
+  .agg-box .agg-icon { font-size: 16px; margin-bottom: 3px; }
+  .agg-box .agg-name { font-size: 11px; font-weight: 700; }
+  .agg-box .agg-rps  {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 700; margin-top: 4px;
+  }
+
+  /* rl clients */
+  .pods-row {
+    display: flex; gap: 6px; justify-content: center;
+  }
+  .pod {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 6px;
+    text-align: center;
+    transition: all .4s;
+    min-width: 0;
+  }
+  .pod .pod-icon { font-size: 14px; }
+  .pod .pod-name { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted); margin: 2px 0; }
+  .pod .pod-rps  { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; }
+  .pod .pod-drop { font-family: 'JetBrains Mono', monospace; font-size: 9px; margin-top: 2px; }
+
+  /* service box */
+  .service-row { display: flex; justify-content: center; margin-top: 14px; }
+  .service-box {
+    background: var(--card);
+    border: 1.5px solid var(--green);
+    border-radius: 10px;
+    padding: 12px 40px;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(0,230,118,.08);
+    transition: all .4s;
+  }
+  .service-box .svc-icon { font-size: 22px; margin-bottom: 4px; }
+  .service-box .svc-name { font-size: 13px; font-weight: 700; }
+  .service-box .svc-total {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; margin-top: 6px;
+    padding: 3px 12px; border-radius: 4px;
+  }
+
+  /* ── math panel ── */
+  .math-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2;
+  }
+  .math-panel .math-title {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px;
+  }
+  .math-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .math-row + .math-row { margin-top: 4px; }
+  .m-label { color: var(--muted); min-width: 220px; font-size: 11px; }
+  .m-val   { font-weight: 700; font-size: 13px; }
+  .m-green { color: var(--green); }
+  .m-red   { color: var(--red); }
+  .m-yellow{ color: var(--yellow); }
+  .m-blue  { color: var(--blue); }
+  .m-divider { height: 1px; background: var(--border); margin: 10px 0; }
+
+  /* ── insight box ── */
+  .insight {
+    background: linear-gradient(135deg, var(--card), #0a1208);
+    border: 1px solid rgba(0,230,118,.2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 13px; color: var(--muted); line-height: 1.8;
+  }
+  .insight strong { color: var(--text); }
+  .insight .insight-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 2px;
+    color: var(--green); text-transform: uppercase; margin-bottom: 8px;
+  }
+
+  /* zone colour states */
+  .zone-normal .agg-box { background: rgba(0,230,118,.05); border-color: rgba(0,230,118,.3); }
+  .zone-normal .agg-box .agg-rps { color: var(--green); }
+  .zone-normal .pod { border-color: rgba(0,230,118,.2); }
+  .zone-normal .pod .pod-rps { color: var(--green); }
+  .zone-normal .pod .pod-drop { color: var(--muted); }
+
+  .zone-spike .agg-box { background: rgba(255,23,68,.07); border-color: rgba(255,23,68,.5); box-shadow: 0 0 16px rgba(255,23,68,.1); }
+  .zone-spike .agg-box .agg-rps { color: var(--red); }
+  .zone-spike .pod { border-color: rgba(255,23,68,.3); }
+  .zone-spike .pod .pod-rps { color: var(--red); }
+  .zone-spike .pod .pod-drop { color: var(--red); }
+
+  .zone-reduced .agg-box { background: rgba(255,214,0,.05); border-color: rgba(255,214,0,.3); }
+  .zone-reduced .agg-box .agg-rps { color: var(--yellow); }
+  .zone-reduced .pod { border-color: rgba(255,214,0,.2); }
+  .zone-reduced .pod .pod-rps { color: var(--yellow); }
+  .zone-reduced .pod .pod-drop { color: var(--yellow); }
+
+  .svc-safe   { border-color: var(--green) !important; box-shadow: 0 0 20px rgba(0,230,118,.12) !important; }
+  .svc-unsafe { border-color: var(--red) !important; box-shadow: 0 0 20px rgba(255,23,68,.15) !important; }
+  .svc-safe .svc-total   { background: rgba(0,230,118,.1); color: var(--green); }
+  .svc-unsafe .svc-total { background: rgba(255,23,68,.1); color: var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="tag">// GRL · Zone Distribution</div>
+  <h1>How GRL Redistributes Quota Across Zones</h1>
+  <p>Global limit = 1,200 req/s · 3 zones · Notification → Trip Service</p>
+</header>
+
+<div class="wrap">
+
+  <div class="tabs">
+    <div class="tab active" onclick="setScene('normal')">✅ Normal Day</div>
+    <div class="tab" onclick="setScene('spike')">🔴 Zone A Spikes (no GRL)</div>
+    <div class="tab" onclick="setScene('fixed')">🛡️ Zone A Spikes (GRL fixes it)</div>
+  </div>
+
+  <div class="scene-label">Scenario: <span id="scene-name">Normal traffic — all zones balanced</span></div>
+
+  <!-- Main diagram -->
+  <div class="diagram-wrap">
+
+    <!-- Regional Controller -->
+    <div class="global-row">
+      <div class="ctrl-box">
+        <div class="icon">🧠</div>
+        <div class="name">Regional Controller</div>
+        <div class="sub">GRL Control Plane</div>
+        <div class="limit-badge" id="ctrl-badge">Global Limit = 1,200 req/s</div>
+      </div>
+    </div>
+
+    <!-- SVG connectors controller → zones -->
+    <div class="connectors">
+      <svg class="conn-svg" viewBox="0 0 900 44" preserveAspectRatio="none">
+        <!-- vertical down from controller -->
+        <line x1="450" y1="0" x2="450" y2="20" stroke="#3b2a5c" stroke-width="2"/>
+        <!-- horizontal bar -->
+        <line x1="150" y1="20" x2="750" y2="20" stroke="#3b2a5c" stroke-width="2"/>
+        <!-- drops to each zone -->
+        <line x1="150" y1="20" x2="150" y2="44" stroke="#3b2a5c" stroke-width="2" id="conn-a"/>
+        <line x1="450" y1="20" x2="450" y2="44" stroke="#3b2a5c" stroke-width="2" id="conn-b"/>
+        <line x1="750" y1="20" x2="750" y2="44" stroke="#3b2a5c" stroke-width="2" id="conn-c"/>
+      </svg>
+    </div>
+
+    <!-- Three zones -->
+    <div class="zones-row">
+
+      <!-- Zone A -->
+      <div class="zone-col zone-normal" id="zone-a">
+        <div class="agg-box">
+          <div class="agg-icon">📊</div>
+          <div class="agg-name">Zone Aggregator A</div>
+          <div class="agg-rps" id="agg-a-rps">400 req/s total</div>
+        </div>
+        <div class="pods-row">
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-1</div>
+            <div class="pod-rps" id="a1-rps">133/s</div>
+            <div class="pod-drop" id="a1-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-2</div>
+            <div class="pod-rps" id="a2-rps">134/s</div>
+            <div class="pod-drop" id="a2-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-3</div>
+            <div class="pod-rps" id="a3-rps">133/s</div>
+            <div class="pod-drop" id="a3-drop">drop 0%</div>
+          </div>
+        </div>
+        <div style="text-align:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted)">us-east-1a</div>
+      </div>
+
+      <!-- Zone B -->
+      <div class="zone-col zone-normal" id="zone-b">
+        <div class="agg-box">
+          <div class="agg-icon">📊</div>
+          <div class="agg-name">Zone Aggregator B</div>
+          <div class="agg-rps" id="agg-b-rps">400 req/s total</div>
+        </div>
+        <div class="pods-row">
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-1</div>
+            <div class="pod-rps" id="b1-rps">133/s</div>
+            <div class="pod-drop" id="b1-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-2</div>
+            <div class="pod-rps" id="b2-rps">134/s</div>
+            <div class="pod-drop" id="b2-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-3</div>
+            <div class="pod-rps" id="b3-rps">133/s</div>
+            <div class="pod-drop" id="b3-drop">drop 0%</div>
+          </div>
+        </div>
+        <div style="text-align:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted)">us-east-1b</div>
+      </div>
+
+      <!-- Zone C -->
+      <div class="zone-col zone-normal" id="zone-c">
+        <div class="agg-box">
+          <div class="agg-icon">📊</div>
+          <div class="agg-name">Zone Aggregator C</div>
+          <div class="agg-rps" id="agg-c-rps">400 req/s total</div>
+        </div>
+        <div class="pods-row">
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-1</div>
+            <div class="pod-rps" id="c1-rps">133/s</div>
+            <div class="pod-drop" id="c1-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-2</div>
+            <div class="pod-rps" id="c2-rps">134/s</div>
+            <div class="pod-drop" id="c2-drop">drop 0%</div>
+          </div>
+          <div class="pod">
+            <div class="pod-icon">🛡️</div>
+            <div class="pod-name">pod-3</div>
+            <div class="pod-rps" id="c3-rps">133/s</div>
+            <div class="pod-drop" id="c3-drop">drop 0%</div>
+          </div>
+        </div>
+        <div style="text-align:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted)">us-east-1c</div>
+      </div>
+
+    </div>
+
+    <!-- Trip Service -->
+    <div class="service-row">
+      <div class="service-box svc-safe" id="trip-box">
+        <div class="svc-icon">📦</div>
+        <div class="svc-name">Trip Service</div>
+        <div class="svc-total" id="trip-total">Total incoming: 1,200 req/s ✅</div>
+      </div>
+    </div>
+
+  </div><!-- /diagram-wrap -->
+
+  <!-- Math panel -->
+  <div class="math-panel" id="math-panel">
+    <div class="math-title">🧮 Controller Math</div>
+
+    <div class="math-row">
+      <div class="m-label">Zone A traffic:</div>
+      <div class="m-val m-green" id="m-a">400 req/s</div>
+    </div>
+    <div class="math-row">
+      <div class="m-label">Zone B traffic:</div>
+      <div class="m-val m-green" id="m-b">400 req/s</div>
+    </div>
+    <div class="math-row">
+      <div class="m-label">Zone C traffic:</div>
+      <div class="m-val m-green" id="m-c">400 req/s</div>
+    </div>
+
+    <div class="m-divider"></div>
+
+    <div class="math-row">
+      <div class="m-label">Total seen globally:</div>
+      <div class="m-val" id="m-total" style="color:var(--green)">1,200 req/s</div>
+    </div>
+    <div class="math-row">
+      <div class="m-label">Global limit (from RLC):</div>
+      <div class="m-val m-green">1,200 req/s</div>
+    </div>
+
+    <div class="m-divider"></div>
+
+    <div class="math-row">
+      <div class="m-label">Zone A quota → drop %:</div>
+      <div class="m-val" id="m-qa" style="color:var(--green)">400/s → drop 0%</div>
+    </div>
+    <div class="math-row">
+      <div class="m-label">Zone B quota → drop %:</div>
+      <div class="m-val" id="m-qb" style="color:var(--green)">400/s → drop 0%</div>
+    </div>
+    <div class="math-row">
+      <div class="m-label">Zone C quota → drop %:</div>
+      <div class="m-val" id="m-qc" style="color:var(--green)">400/s → drop 0%</div>
+    </div>
+
+    <div class="m-divider"></div>
+
+    <div class="math-row">
+      <div class="m-label">Total reaching Trip Service:</div>
+      <div class="m-val" id="m-reach" style="color:var(--green)">1,200 req/s ✅</div>
+    </div>
+  </div>
+
+  <!-- Insight -->
+  <div class="insight" id="insight-box">
+    <div class="insight-title">💡 Key Insight</div>
+    <span id="insight-text">
+      All 3 zones are balanced. Each gets an equal <strong>400 req/s quota</strong>.
+      No drops needed — Trip Service is running at exactly its limit. The Controller
+      just monitors and confirms everything is healthy.
+    </span>
+  </div>
+
+</div>
+
+<script>
+  const scenes = {
+    normal: {
+      name: 'Normal traffic — all zones balanced',
+      zA: 400, zB: 400, zC: 400,
+      withGRL: true,
+      insight: `All 3 zones are balanced. Each gets an equal <strong>400 req/s quota</strong>.
+      No drops needed — Trip Service is running at exactly its limit. The Controller
+      just monitors and confirms everything is healthy.`
+    },
+    spike: {
+      name: 'Zone A spikes to 2,000/s — WITHOUT GRL redistributing',
+      zA: 2000, zB: 400, zC: 400,
+      withGRL: false,
+      insight: `<strong>Without GRL:</strong> each RL Client only reads the static config limit (1,200/s).
+      Pod 1 in Zone A sees 667/s — thinks it's fine. All pods let everything through.
+      Trip Service gets <strong>2,800 req/s</strong> — more than double its capacity. It crashes. 💥`
+    },
+    fixed: {
+      name: 'Zone A spikes to 2,000/s — GRL redistributes proportionally',
+      zA: 2000, zB: 400, zC: 400,
+      withGRL: true,
+      insight: `<strong>Proportional distribution:</strong> Controller sees 2,800 total, limit is 1,200.
+      Zone A caused the spike so it gets the biggest cut — but Zones B and C also tighten
+      proportionally because the global limit is shared. Result: exactly 1,200 reaches Trip Service. ✅
+      <br><br>
+      <strong>Why not just cap Zone A?</strong> If we only stopped Zone A (0 req/s) and left B+C untouched,
+      Trip Service would only get 800/s — wasting 400/s of capacity. Proportional is smarter.`
+    }
+  };
+
+  function setScene(key) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+
+    const s = scenes[key];
+    const limit = 1200;
+    const total = s.zA + s.zB + s.zC;
+
+    document.getElementById('scene-name').textContent = s.name;
+
+    // compute quotas
+    let qA, qB, qC, dropA, dropB, dropC, reaching;
+
+    if (s.withGRL) {
+      qA = Math.round((s.zA / total) * limit);
+      qB = Math.round((s.zB / total) * limit);
+      qC = limit - qA - qB;
+      dropA = Math.round((1 - qA / s.zA) * 100);
+      dropB = Math.round((1 - qB / s.zB) * 100);
+      dropC = Math.round((1 - qC / s.zC) * 100);
+      reaching = qA + qB + qC;
+    } else {
+      // no redistribution — each pod just uses static limit naively
+      qA = s.zA; qB = s.zB; qC = s.zC;
+      dropA = 0; dropB = 0; dropC = 0;
+      reaching = total;
+    }
+
+    // zone A
+    const zoneAClass = s.zA > 500 ? (s.withGRL ? 'zone-reduced' : 'zone-spike') : 'zone-normal';
+    setZone('a', zoneAClass, s.zA, qA, dropA);
+
+    // zone B
+    const zoneBClass = (s.withGRL && s.zA > 500) ? 'zone-reduced' : 'zone-normal';
+    setZone('b', zoneBClass, s.zB, qB, dropB);
+
+    // zone C
+    const zoneCClass = (s.withGRL && s.zA > 500) ? 'zone-reduced' : 'zone-normal';
+    setZone('c', zoneCClass, s.zC, qC, dropC);
+
+    // trip service
+    const safe = reaching <= limit;
+    const tripBox = document.getElementById('trip-box');
+    tripBox.className = 'service-box ' + (safe ? 'svc-safe' : 'svc-unsafe');
+    document.getElementById('trip-total').textContent =
+      'Total incoming: ' + reaching.toLocaleString() + ' req/s ' + (safe ? '✅' : '💥 OVERLOADED');
+
+    // math panel
+    const aColor = s.zA > 500 ? 'var(--red)' : 'var(--green)';
+    document.getElementById('m-a').style.color = aColor;
+    document.getElementById('m-a').textContent = s.zA.toLocaleString() + ' req/s';
+    document.getElementById('m-b').textContent = s.zB.toLocaleString() + ' req/s';
+    document.getElementById('m-c').textContent = s.zC.toLocaleString() + ' req/s';
+
+    document.getElementById('m-total').textContent = total.toLocaleString() + ' req/s';
+    document.getElementById('m-total').style.color = total > limit ? 'var(--red)' : 'var(--green)';
+
+    document.getElementById('m-qa').textContent = qA + '/s → drop ' + dropA + '%';
+    document.getElementById('m-qa').style.color = dropA > 0 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('m-qb').textContent = qB + '/s → drop ' + dropB + '%';
+    document.getElementById('m-qb').style.color = dropB > 0 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('m-qc').textContent = qC + '/s → drop ' + dropC + '%';
+    document.getElementById('m-qc').style.color = dropC > 0 ? 'var(--yellow)' : 'var(--green)';
+
+    document.getElementById('m-reach').textContent = reaching.toLocaleString() + ' req/s ' + (safe ? '✅' : '💥');
+    document.getElementById('m-reach').style.color = safe ? 'var(--green)' : 'var(--red)';
+
+    document.getElementById('insight-text').innerHTML = s.insight;
+  }
+
+  function setZone(id, cls, incoming, quota, drop) {
+    const zoneEl = document.getElementById('zone-' + id);
+    zoneEl.className = 'zone-col ' + cls;
+
+    document.getElementById('agg-' + id + '-rps').textContent = incoming.toLocaleString() + ' req/s total';
+
+    const pods = 3;
+    const perPod = [
+      Math.round(incoming / 3),
+      Math.round(incoming / 3),
+      incoming - 2 * Math.round(incoming / 3)
+    ];
+
+    for (let i = 1; i <= pods; i++) {
+      document.getElementById(id + i + '-rps').textContent = perPod[i-1] + '/s';
+      document.getElementById(id + i + '-drop').textContent = 'drop ' + drop + '%';
+    }
+  }
+
+  // init
+  setScene('normal');
+  // fix tab active state since we called without event
+  document.querySelectorAll('.tab')[0].classList.add('active');
+
+  // override setScene to handle no-event calls
+  const origSetScene = setScene;
+  window.setScene = function(key) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    if (window.event) window.event.currentTarget.classList.add('active');
+    const s = scenes[key];
+    const limit = 1200;
+    const total = s.zA + s.zB + s.zC;
+    document.getElementById('scene-name').textContent = s.name;
+    let qA, qB, qC, dropA, dropB, dropC, reaching;
+    if (s.withGRL) {
+      qA = Math.round((s.zA / total) * limit);
+      qB = Math.round((s.zB / total) * limit);
+      qC = limit - qA - qB;
+      dropA = Math.round((1 - qA / s.zA) * 100);
+      dropB = Math.round((1 - qB / s.zB) * 100);
+      dropC = Math.round((1 - qC / s.zC) * 100);
+      reaching = qA + qB + qC;
+    } else {
+      qA = s.zA; qB = s.zB; qC = s.zC;
+      dropA = 0; dropB = 0; dropC = 0;
+      reaching = total;
+    }
+    const zoneAClass = s.zA > 500 ? (s.withGRL ? 'zone-reduced' : 'zone-spike') : 'zone-normal';
+    setZone('a', zoneAClass, s.zA, qA, dropA);
+    const zoneBClass = (s.withGRL && s.zA > 500) ? 'zone-reduced' : 'zone-normal';
+    setZone('b', zoneBClass, s.zB, qB, dropB);
+    const zoneCClass = (s.withGRL && s.zA > 500) ? 'zone-reduced' : 'zone-normal';
+    setZone('c', zoneCClass, s.zC, qC, dropC);
+    const safe = reaching <= limit;
+    const tripBox = document.getElementById('trip-box');
+    tripBox.className = 'service-box ' + (safe ? 'svc-safe' : 'svc-unsafe');
+    document.getElementById('trip-total').textContent = 'Total incoming: ' + reaching.toLocaleString() + ' req/s ' + (safe ? '✅' : '💥 OVERLOADED');
+    const aColor = s.zA > 500 ? 'var(--red)' : 'var(--green)';
+    document.getElementById('m-a').style.color = aColor;
+    document.getElementById('m-a').textContent = s.zA.toLocaleString() + ' req/s';
+    document.getElementById('m-b').textContent = s.zB.toLocaleString() + ' req/s';
+    document.getElementById('m-c').textContent = s.zC.toLocaleString() + ' req/s';
+    document.getElementById('m-total').textContent = total.toLocaleString() + ' req/s';
+    document.getElementById('m-total').style.color = total > limit ? 'var(--red)' : 'var(--green)';
+    document.getElementById('m-qa').textContent = qA + '/s → drop ' + dropA + '%';
+    document.getElementById('m-qa').style.color = dropA > 0 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('m-qb').textContent = qB + '/s → drop ' + dropB + '%';
+    document.getElementById('m-qb').style.color = dropB > 0 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('m-qc').textContent = qC + '/s → drop ' + dropC + '%';
+    document.getElementById('m-qc').style.color = dropC > 0 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('m-reach').textContent = reaching.toLocaleString() + ' req/s ' + (safe ? '✅' : '💥');
+    document.getElementById('m-reach').style.color = safe ? 'var(--green)' : 'var(--red)';
+    document.getElementById('insight-text').innerHTML = s.insight;
+  }
+</script>
+</body>
+</html>
