@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLC — Rate Limit Configurator Explained</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: #f5f7fa;
+    font-family: 'Inter', sans-serif;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #1a1a2e;
+    color: white;
+    padding: 32px 40px;
+  }
+  header .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #6ee7b7;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  header h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+  header p  { font-size: 14px; color: #94a3b8; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+
+  /* GRL vs RLC comparison */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .compare-box {
+    border-radius: 12px;
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .compare-box.old {
+    background: #fff1f2;
+    border: 2px solid #fecdd3;
+  }
+  .compare-box.new {
+    background: #f0fdf4;
+    border: 2px solid #bbf7d0;
+  }
+  .compare-box .label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .compare-box.old .label { color: #e11d48; }
+  .compare-box.new .label { color: #16a34a; }
+  .compare-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .compare-box p  { color: #475569; font-size: 13px; }
+
+  /* story box */
+  .story {
+    background: #fff8e1;
+    border-left: 5px solid #f59e0b;
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    font-size: 15px;
+    line-height: 1.8;
+  }
+  .story strong { color: #92400e; }
+
+  /* progress */
+  .progress-bar {
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #1a1a2e;
+    border-radius: 4px;
+    transition: width .4s ease;
+  }
+
+  /* steps */
+  .steps { display: flex; flex-direction: column; }
+
+  .step {
+    display: flex;
+    gap: 0;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all .4s ease;
+  }
+  .step.visible { opacity:1; transform:none; }
+
+  .step-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 56px;
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 15px;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .step-line {
+    width: 3px;
+    flex: 1;
+    min-height: 24px;
+    margin: 4px 0;
+  }
+
+  .step-body {
+    flex: 1;
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    border: 1.5px solid transparent;
+  }
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .step-emoji { font-size: 26px; }
+  .step-title { font-size: 17px; font-weight: 700; }
+  .step-who {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-left: auto;
+    font-weight: 600;
+  }
+  .step-text {
+    font-size: 14px;
+    color: #475569;
+    line-height: 1.8;
+    margin-bottom: 14px;
+  }
+  .step-text strong { color: #1a1a2e; }
+
+  /* mini diagram */
+  .mini-diagram {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #334155;
+    line-height: 2.1;
+    border: 1px solid #e2e8f0;
+    white-space: pre-wrap;
+    margin-bottom: 4px;
+  }
+  .mini-diagram .hi  { color: #16a34a; font-weight: 600; }
+  .mini-diagram .red { color: #ef4444; font-weight: 600; }
+  .mini-diagram .yel { color: #d97706; font-weight: 600; }
+  .mini-diagram .blu { color: #2563eb; font-weight: 600; }
+  .mini-diagram .pur { color: #7c3aed; font-weight: 600; }
+
+  /* policy cards inside a step */
+  .policy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .policy-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .policy-card .p-icon { font-size: 22px; margin-bottom: 6px; }
+  .policy-card .p-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .policy-card .p-desc { font-size: 12px; color: #64748b; line-height: 1.5; }
+  .policy-card.green { border-color: #bbf7d0; background: #f0fdf4; }
+  .policy-card.blue  { border-color: #bfdbfe; background: #eff6ff; }
+  .policy-card.purple{ border-color: #ddd6fe; background: #faf5ff; }
+
+  /* step nav */
+  .step-nav {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f1f5f9;
+  }
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-primary { background: #1a1a2e; color: white; flex: 1; }
+  .btn-primary:hover { background: #2d2d4e; }
+  .btn-secondary { background: white; color: #1a1a2e; border: 2px solid #e2e8f0; }
+  .btn-secondary:hover { border-color: #1a1a2e; }
+
+  /* colour themes */
+  .s1 .step-num { background:#dbeafe; color:#1d4ed8; }
+  .s1 .step-line { background:#bfdbfe; }
+  .s1 .step-body { border-color:#bfdbfe; }
+  .s1 .step-who  { background:#dbeafe; color:#1d4ed8; }
+
+  .s2 .step-num { background:#fef3c7; color:#92400e; }
+  .s2 .step-line { background:#fde68a; }
+  .s2 .step-body { border-color:#fde68a; }
+  .s2 .step-who  { background:#fef3c7; color:#92400e; }
+
+  .s3 .step-num { background:#d1fae5; color:#065f46; }
+  .s3 .step-line { background:#a7f3d0; }
+  .s3 .step-body { border-color:#a7f3d0; }
+  .s3 .step-who  { background:#d1fae5; color:#065f46; }
+
+  .s4 .step-num { background:#ede9fe; color:#5b21b6; }
+  .s4 .step-line { background:#ddd6fe; }
+  .s4 .step-body { border-color:#ddd6fe; }
+  .s4 .step-who  { background:#ede9fe; color:#5b21b6; }
+
+  .s5 .step-num { background:#fee2e2; color:#991b1b; }
+  .s5 .step-line { background:#fecaca; }
+  .s5 .step-body { border-color:#fecaca; }
+  .s5 .step-who  { background:#fee2e2; color:#991b1b; }
+
+  .s6 .step-num { background:#d1fae5; color:#065f46; }
+  .s6 .step-line { background: transparent; }
+  .s6 .step-body { border-color:#6ee7b7; background:#f0fdf4; }
+  .s6 .step-who  { background:#d1fae5; color:#065f46; }
+
+  /* summary */
+  .summary {
+    background: #1a1a2e;
+    color: white;
+    border-radius: 16px;
+    padding: 28px;
+    margin-top: 4px;
+    display: none;
+  }
+  .summary.show { display: block; }
+  .summary h2 { font-size: 18px; margin-bottom: 16px; color: #6ee7b7; }
+  .summary-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #cbd5e1;
+  }
+  .summary-row .ico { font-size: 20px; flex-shrink: 0; }
+  .summary-row strong { color: white; }
+
+  /* GRL+RLC relationship diagram */
+  .relationship {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2.2;
+    color: #334155;
+    white-space: pre-wrap;
+    margin-bottom: 14px;
+  }
+
+  @media (max-width: 600px) {
+    .compare { grid-template-columns: 1fr; }
+    header { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="tag">// Uber Engineering · RLC Deep Dive</div>
+  <h1>🤖 RLC — Rate Limit Configurator</h1>
+  <p>The brain that automatically sets & updates rate limits — so humans don't have to</p>
+</header>
+
+<div class="container">
+
+  <!-- GRL vs RLC -->
+  <div class="compare">
+    <div class="compare-box old">
+      <div class="label">GRL does this</div>
+      <h3>⚡ Enforces limits in real-time</h3>
+      <p>When traffic is flowing, GRL is the cop at the checkpoint — it counts, decides, and drops requests <em>right now</em>.</p>
+    </div>
+    <div class="compare-box new">
+      <div class="label">RLC does this</div>
+      <h3>🧠 Decides what the limits should be</h3>
+      <p>RLC is the analyst working in the background — it looks at weeks of history and writes the rule book that GRL follows.</p>
+    </div>
+  </div>
+
+  <!-- Story -->
+  <div class="story">
+    <strong>📖 The problem RLC solves:</strong> Uber has <strong>thousands of services</strong>.
+    Each pair of services needs a rate limit. Engineers used to set these limits <strong>manually</strong>.
+    The problem? Traffic patterns change constantly — new features ship, seasonal spikes happen, services scale up.
+    A limit set 3 months ago might be <strong>way too strict</strong> (throttling healthy traffic) or
+    <strong>way too loose</strong> (offering zero protection). RLC fixes this by automatically recalculating
+    limits based on real traffic history. 👇 Walk through how it works.
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+
+  <!-- Steps -->
+  <div class="steps" id="steps">
+
+    <!-- STEP 1 -->
+    <div class="step s1" id="step-1">
+      <div class="step-left">
+        <div class="step-num">1</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">😩</div>
+          <div class="step-title">The old way — humans setting limits manually</div>
+          <div class="step-who">The Problem</div>
+        </div>
+        <div class="step-text">
+          Before RLC, an engineer had to manually look at dashboards and decide:
+          <br><br>
+          <strong>"Trip Service gets about 800 req/s from Notification Service on a normal day.
+          Let me set the limit to 1,200 to give 50% headroom."</strong>
+          <br><br>
+          Sounds reasonable — but 3 months later, Uber launched a new feature. Notification traffic grew to 1,500 req/s normally.
+          Now the limit of 1,200 is <strong>throttling healthy traffic</strong>. And nobody remembered to update it.
+        </div>
+        <div class="mini-diagram">
+Jan 1:  Engineer sets limit = <span class="hi">1,200 req/s</span>  ✅ reasonable
+
+Mar 1:  Normal traffic is now <span class="yel">1,500 req/s</span>  (new feature shipped)
+        Limit is still  = <span class="red">1,200 req/s</span>  ← now throttling real traffic!
+
+Jun 1:  Engineer finally notices → updates limit = <span class="hi">2,000 req/s</span>
+        But now it's too loose → offers no protection during a spike!
+
+Problem: <span class="red">limits go stale. humans can't keep up with thousands of services.</span></div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="reset()">↺ Restart</button>
+          <button class="btn btn-primary" onclick="next()">Next Step →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step s2" id="step-2">
+      <div class="step-left">
+        <div class="step-num">2</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">📥</div>
+          <div class="step-title">Step 1: RLC collects weeks of traffic history</div>
+          <div class="step-who">Data Collection</div>
+        </div>
+        <div class="step-text">
+          On a fixed schedule (e.g. every day), RLC goes to Uber's <strong>observability platform</strong>
+          (think: a giant metrics store) and pulls the actual RPS data for every service pair over the past few weeks.
+          <br><br>
+          It's asking: <strong>"What did real traffic actually look like?"</strong>
+        </div>
+        <div class="mini-diagram">
+RLC asks the metrics store:
+
+  "Give me the last 3 weeks of RPS for every caller → service pair"
+
+  Notification  → Trip Service :
+    Week 1 peak: <span class="yel">820 req/s</span>
+    Week 2 peak: <span class="yel">950 req/s</span>   ← Black Friday spike
+    Week 3 peak: <span class="yel">870 req/s</span>
+    Average peak: <span class="hi">880 req/s</span>
+
+  Driver App    → Trip Service :
+    Average peak: <span class="hi">2,100 req/s</span>
+
+  ... and so on for ALL service pairs at Uber (thousands of them)</div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="prev()">← Back</button>
+          <button class="btn btn-primary" onclick="next()">Next Step →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step s3" id="step-3">
+      <div class="step-left">
+        <div class="step-num">3</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🧮</div>
+          <div class="step-title">Step 2: RLC computes a safe limit with buffer headroom</div>
+          <div class="step-who">Limit Calculation</div>
+        </div>
+        <div class="step-text">
+          RLC doesn't just use the average — it uses the <strong>historical peak</strong> and adds a
+          <strong>buffer headroom</strong> (e.g. 20–30% extra) to handle natural growth and minor spikes,
+          without going so high that the limit becomes meaningless.
+          <br><br>
+          This is the core formula: <strong>New Limit = Peak Traffic × (1 + Buffer %)</strong>
+        </div>
+        <div class="mini-diagram">
+For Notification → Trip Service:
+
+  Observed peak (last 3 weeks) = <span class="yel">950 req/s</span>
+  Buffer headroom              = <span class="blu">+30%</span>
+  
+  New safe limit = 950 × 1.30 = <span class="hi">1,235 req/s</span>  ✅
+
+  This means:
+  • Normal traffic (~880/s)  → <span class="hi">always passes</span>  (well under limit)
+  • Small spikes (~1,100/s)  → <span class="hi">still passes</span>   (within headroom)
+  • Bug/attack (5,000/s)     → <span class="red">gets shed</span>      (way over limit)</div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="prev()">← Back</button>
+          <button class="btn btn-primary" onclick="next()">Next Step →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="step s4" id="step-4">
+      <div class="step-left">
+        <div class="step-num">4</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🧩</div>
+          <div class="step-title">RLC supports 3 different policy types</div>
+          <div class="step-who">Flexibility</div>
+        </div>
+        <div class="step-text">
+          Not every service is the same. RLC has <strong>3 calculation strategies</strong> — teams pick whichever fits their service:
+        </div>
+        <div class="policy-grid">
+          <div class="policy-card green">
+            <div class="p-icon">📈</div>
+            <div class="p-name">Historical Peak</div>
+            <div class="p-desc">Default. Uses past N weeks of real traffic + buffer. Great for most services.</div>
+          </div>
+          <div class="policy-card blue">
+            <div class="p-icon">🔮</div>
+            <div class="p-name">Predictive / Forecast</div>
+            <div class="p-desc">Uses traffic forecasts + planned capacity. Used by Maps & Location — they know future load in advance.</div>
+          </div>
+          <div class="policy-card purple">
+            <div class="p-icon">📌</div>
+            <div class="p-name">Fixed Quota</div>
+            <div class="p-desc">A hard static limit per caller. Used when you want strict fairness (e.g. partner APIs).</div>
+          </div>
+        </div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="prev()">← Back</button>
+          <button class="btn btn-primary" onclick="next()">Next Step →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5 -->
+    <div class="step s5" id="step-5">
+      <div class="step-left">
+        <div class="step-num">5</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🚀</div>
+          <div class="step-title">Step 3: RLC writes & pushes the new limits to GRL</div>
+          <div class="step-who">Deployment</div>
+        </div>
+        <div class="step-text">
+          Once RLC has computed the new limits for all service pairs, it:
+          <br><br>
+          1. <strong>Writes</strong> them to a shared config repository
+          <br>
+          2. <strong>Pushes</strong> them into GRL through the existing control plane
+          <br><br>
+          GRL's Regional Controller picks them up and distributes them down to all RL Clients in the mesh.
+          <strong>No human needed. No deployment. No code change.</strong>
+        </div>
+        <div class="relationship">
+<span class="blu">RLC</span> (runs on schedule, e.g. daily)
+  │
+  ├─ Collects metrics from observability platform
+  ├─ Computes new limits using policy
+  ├─ Writes to config repo  ──────────────────────────────┐
+  │                                                        ↓
+  └─────────────────────────────────────▶  <span class="pur">GRL Control Plane</span>
+                                               │
+                                      ┌────────┴────────┐
+                                      ↓                 ↓
+                               <span class="hi">Zone Aggregator A</span>    <span class="hi">Zone Aggregator B</span>
+                                      ↓                 ↓
+                              <span class="hi">RL Clients (mesh)</span>   <span class="hi">RL Clients (mesh)</span>
+                              now enforcing            now enforcing
+                              new limits ✅            new limits ✅</div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="prev()">← Back</button>
+          <button class="btn btn-primary" onclick="next()">Next Step →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 6 -->
+    <div class="step s6" id="step-6">
+      <div class="step-left">
+        <div class="step-num">🛡️</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-head">
+          <div class="step-emoji">🧪</div>
+          <div class="step-title">Bonus: Shadow Mode — try before you enforce</div>
+          <div class="step-who">Safety Net</div>
+        </div>
+        <div class="step-text">
+          Teams nervous about activating RLC can run it in <strong>Shadow Mode</strong> first.
+          RLC generates and monitors the limits — but doesn't actually enforce them yet.
+          <br><br>
+          Dashboards show: <em>"If this limit was active, X% of traffic would have been dropped."</em>
+          Teams can verify the limits look sane before flipping the switch to live enforcement.
+        </div>
+        <div class="mini-diagram">
+Shadow Mode ON for Trip Service:
+
+  RLC computed limit: <span class="hi">1,235 req/s</span>
+
+  Day 1 simulation: traffic = 880/s  →  <span class="hi">0% would be dropped</span>   ✅
+  Day 2 simulation: traffic = 910/s  →  <span class="hi">0% would be dropped</span>   ✅
+  Day 3 simulation: traffic = 870/s  →  <span class="hi">0% would be dropped</span>   ✅
+
+  Team is confident → <span class="hi">flips to LIVE enforcement</span>  ✅
+
+  (If shadow showed 20% of legit traffic being dropped →
+   engineer adjusts buffer headroom before going live)</div>
+        <div class="step-nav">
+          <button class="btn btn-secondary" onclick="prev()">← Back</button>
+          <button class="btn btn-secondary" onclick="reset()">↺ Restart from beginning</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- Summary -->
+  <div class="summary" id="summary">
+    <h2>⚡ RLC in One View</h2>
+    <div class="summary-row">
+      <div class="ico">😩</div>
+      <div><strong>The problem:</strong> Manual limits go stale as traffic evolves. Thousands of services = impossible for humans to manage.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">📥</div>
+      <div><strong>Step 1 — Collect:</strong> RLC pulls weeks of real RPS data from the observability platform for every service pair.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🧮</div>
+      <div><strong>Step 2 — Compute:</strong> Uses historical peak + buffer headroom to set a limit that's tight enough to protect but loose enough for healthy traffic.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🧩</div>
+      <div><strong>3 policy types:</strong> Historical (default), Predictive (Maps/Location), Fixed Quota (partner APIs). Teams pick what fits.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🚀</div>
+      <div><strong>Step 3 — Push:</strong> New limits written to config repo and pushed into GRL automatically. No code changes, no humans.</div>
+    </div>
+    <div class="summary-row">
+      <div class="ico">🧪</div>
+      <div><strong>Shadow mode:</strong> Teams can simulate limits before enforcing — see what would have been dropped, gain confidence, then go live.</div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const totalSteps = 6;
+  let current = 1;
+
+  // show step 1 immediately on load
+  window.addEventListener('DOMContentLoaded', () => showStep(1));
+
+  function showStep(n) {
+    for (let i = 1; i <= totalSteps; i++) {
+      const el = document.getElementById('step-' + i);
+      if (i <= n) el.classList.add('visible');
+      else el.classList.remove('visible');
+    }
+    document.getElementById('progress').style.width = ((n / totalSteps) * 100) + '%';
+    const summary = document.getElementById('summary');
+    n === totalSteps ? summary.classList.add('show') : summary.classList.remove('show');
+  }
+
+  function next() {
+    if (current < totalSteps) {
+      current++;
+      showStep(current);
+      setTimeout(() => {
+        document.getElementById('step-' + current).scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 100);
+    }
+  }
+
+  function prev() {
+    if (current > 1) { current--; showStep(current); }
+  }
+
+  function reset() {
+    current = 1;
+    showStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>
