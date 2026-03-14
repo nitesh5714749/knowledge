@@ -356,6 +356,9 @@ footer{
 /* ── SCROLL REVEAL ── */
 .reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
 .reveal.visible{opacity:1;transform:none}
+
+/* ── CHIP POP ── */
+@keyframes chipPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 </style>
 </head>
 <body>
@@ -654,6 +657,107 @@ footer{
         <div class="s3-card-icon">🏗️</div>
         <div class="s3-card-title">Upload before knowing final size</div>
         <div class="s3-card-body">You can begin uploading parts while still generating the object — perfect for live video transcoding or log aggregation where the final size isn't known until the stream ends.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- UNKNOWN SIZE SIMULATION -->
+  <section class="section reveal">
+    <div class="section-label">Simulation</div>
+    <h2>Upload before knowing final size</h2>
+    <p class="section-desc">
+      In a normal upload you must declare the file size upfront. With multipart, you can start uploading parts <em>while still generating data</em> — the server has no idea how many parts will arrive. Click <strong style="color:var(--accent2)">Generate &amp; Upload Part</strong> to stream data in real time, then <strong style="color:var(--accent2)">Stop Stream &amp; Complete</strong> when done.
+    </p>
+
+    <div class="highlight-box" style="margin-bottom:20px;">
+      <div class="highlight-box-icon">🎬</div>
+      <div class="highlight-box-text">
+        <strong>Real-world use cases:</strong> live video transcoding (you don't know the final duration), log file shipping (logs keep arriving), sensor data aggregation, or any streaming pipeline where the producer and uploader run simultaneously.
+      </div>
+    </div>
+
+    <div class="visualizer" id="uss-viz">
+
+      <!-- Source selector -->
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);">Data source</div>
+        <select class="viz-select" id="uss-source">
+          <option value="video">📹 Live video transcoder</option>
+          <option value="logs">📋 Log file aggregator</option>
+          <option value="sensor">📡 Sensor data stream</option>
+        </select>
+        <select class="viz-select" id="uss-speed">
+          <option value="fast">Fast stream (50 MB/part)</option>
+          <option value="slow" selected>Normal stream (20 MB/part)</option>
+          <option value="burst">Bursty (random size)</option>
+        </select>
+      </div>
+
+      <!-- Two-column layout: Producer | Server -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+
+        <!-- Producer side -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:18px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+            <span id="uss-producer-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;transition:background .3s;"></span>
+            Producer
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;" id="uss-producer-label">Waiting to start…</div>
+          <!-- Buffer bar -->
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:5px;">Buffer</div>
+          <div style="height:10px;background:var(--surface2);border-radius:5px;overflow:hidden;margin-bottom:10px;">
+            <div id="uss-buffer-fill" style="height:100%;border-radius:5px;background:var(--teal);width:0%;transition:width .4s;"></div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);" id="uss-buffer-val">0 MB buffered</div>
+          <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Total generated: <span id="uss-total-gen" style="color:var(--text);">0 MB</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Parts flushed: <span id="uss-parts-flushed" style="color:var(--text);">0</span></div>
+          <div style="margin-top:12px;font-size:11px;color:var(--muted);line-height:1.6;" id="uss-producer-note">
+            The producer generates data continuously. It doesn't know the final size — it just keeps producing.
+          </div>
+        </div>
+
+        <!-- Server side -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:18px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+            <span id="uss-server-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;transition:background .3s;"></span>
+            S3 / Server
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;" id="uss-server-label">No upload initiated</div>
+          <!-- Parts received -->
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;">Parts received</div>
+          <div id="uss-parts-row" style="display:flex;gap:5px;flex-wrap:wrap;min-height:32px;margin-bottom:10px;"></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Upload ID: <span id="uss-uid" style="color:var(--accent2);">—</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Object size: <span id="uss-obj-size" style="color:var(--text);">unknown</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Status: <span id="uss-server-status" style="color:var(--text);">waiting</span></div>
+          <div style="margin-top:12px;font-size:11px;color:var(--muted);line-height:1.6;" id="uss-server-note">
+            The server accepts parts without knowing the total. It stores each part and waits for the complete signal.
+          </div>
+        </div>
+      </div>
+
+      <!-- Network arrow row -->
+      <div id="uss-arrow-row" style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;min-height:28px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);">Producer</div>
+        <div id="uss-arrow" style="flex:1;max-width:320px;height:2px;background:var(--border2);border-radius:1px;position:relative;overflow:hidden;">
+          <div id="uss-packet" style="position:absolute;top:-3px;left:-16px;width:14px;height:8px;background:var(--teal);border-radius:3px;opacity:0;transition:none;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);">S3</div>
+      </div>
+
+      <!-- HTTP log -->
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">HTTP trace</div>
+      <div id="uss-log" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:11px;height:110px;overflow-y:auto;line-height:1.8;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;margin-bottom:18px;">Waiting to start…</div>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="viz-btn primary" id="uss-btn-init" onclick="ussInit()">① Initiate upload</button>
+        <button class="viz-btn secondary" id="uss-btn-part" onclick="ussAddPart()" disabled>② Generate &amp; upload part</button>
+        <button class="viz-btn secondary" id="uss-btn-complete" onclick="ussComplete()" disabled style="border-color:var(--green);color:var(--green);">③ Stop stream &amp; complete</button>
+        <button class="viz-btn secondary" id="uss-btn-reset" onclick="ussReset()">↺ Reset</button>
+      </div>
+
+      <!-- Key insight -->
+      <div id="uss-insight" style="margin-top:16px;padding:14px 16px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.7;display:none;">
       </div>
     </div>
   </section>
@@ -1014,7 +1118,239 @@ function resetSim(){
 // init
 buildChunkRow();
 
-// ── SCROLL REVEAL ──
+// ─────────────────────────────────────────────
+//  UNKNOWN SIZE STREAMING SIMULATION
+// ─────────────────────────────────────────────
+const USS = {
+  uploadId: null,
+  partCount: 0,
+  totalGenMB: 0,
+  bufferMB: 0,
+  etags: [],
+  initiated: false,
+  completed: false,
+};
+
+const SOURCE_CFG = {
+  video:  { icon:'📹', name:'Video transcoder', unit:'MB of encoded video', color:'#A78BFA', colorDim:'#3B1F8C' },
+  logs:   { icon:'📋', name:'Log aggregator',   unit:'MB of log lines',     color:'#60A5FA', colorDim:'#1D3557' },
+  sensor: { icon:'📡', name:'Sensor stream',    unit:'MB of sensor data',   color:'#2DD4BF', colorDim:'#0D3530' },
+};
+
+function ussPartMB(){
+  const speed = document.getElementById('uss-speed').value;
+  if(speed==='fast') return 50;
+  if(speed==='slow') return 20;
+  return Math.round(10 + Math.random()*60); // bursty
+}
+
+function ussLog(msg, cls){
+  const box = document.getElementById('uss-log');
+  const d = document.createElement('div');
+  d.className = cls||'';
+  const ts = new Date().toLocaleTimeString('en',{hour12:false});
+  d.textContent = `[${ts}] ${msg}`;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+function ussSetProducerDot(on){
+  const dot = document.getElementById('uss-producer-dot');
+  dot.style.background = on ? 'var(--teal)' : 'var(--muted)';
+  dot.style.boxShadow  = on ? '0 0 6px var(--teal)' : 'none';
+}
+function ussSetServerDot(on){
+  const dot = document.getElementById('uss-server-dot');
+  dot.style.background = on ? 'var(--accent)' : 'var(--muted)';
+  dot.style.boxShadow  = on ? '0 0 6px var(--accent)' : 'none';
+}
+
+function ussAnimatePacket(cb){
+  const pkt = document.getElementById('uss-packet');
+  pkt.style.transition = 'none';
+  pkt.style.left = '-16px';
+  pkt.style.opacity = '1';
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      pkt.style.transition = 'left .7s linear, opacity .2s .6s';
+      pkt.style.left = '100%';
+      pkt.style.opacity = '0';
+      setTimeout(cb, 750);
+    });
+  });
+}
+
+function ussAddPartChip(partNum, mb, color){
+  const row = document.getElementById('uss-parts-row');
+  const chip = document.createElement('div');
+  chip.style.cssText=`
+    font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
+    padding:5px 9px;border-radius:6px;border:1px solid ${color};
+    color:${color};background:${color}18;
+    animation:chipPop .25s ease;
+  `;
+  chip.textContent = `P${partNum} · ${mb}MB`;
+  row.appendChild(chip);
+}
+
+function ussUpdateBuffer(mb){
+  USS.bufferMB = mb;
+  const pct = Math.min(100, (mb/60)*100);
+  document.getElementById('uss-buffer-fill').style.width = pct+'%';
+  document.getElementById('uss-buffer-val').textContent = mb>0 ? `${mb} MB buffered` : '0 MB buffered (flushed)';
+}
+
+function ussShowInsight(msg){
+  const el = document.getElementById('uss-insight');
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+// ── Step ①: Initiate ──
+function ussInit(){
+  if(USS.initiated) return;
+  const src = document.getElementById('uss-source').value;
+  const cfg = SOURCE_CFG[src];
+  USS.uploadId = 'mpu-stream-'+Math.random().toString(36).slice(2,8);
+  USS.initiated = true;
+
+  document.getElementById('uss-uid').textContent = USS.uploadId;
+  document.getElementById('uss-server-label').textContent = 'Upload session open';
+  document.getElementById('uss-server-status').textContent = 'accepting parts';
+  document.getElementById('uss-producer-label').textContent = `${cfg.icon} ${cfg.name} running…`;
+  document.getElementById('uss-obj-size').textContent = '❓ unknown';
+
+  ussSetProducerDot(true);
+  ussSetServerDot(true);
+
+  document.getElementById('uss-btn-init').disabled = true;
+  document.getElementById('uss-btn-part').disabled = false;
+  document.getElementById('uss-btn-complete').disabled = false;
+  document.getElementById('uss-source').disabled = true;
+
+  ussLog(`POST /uploads  →  { uploadId: "${USS.uploadId}" }`, 'log-info');
+  ussLog(`Server: session open. Waiting for parts… (size unknown)`, 'log-ok');
+
+  ussShowInsight(`<strong style="color:var(--accent2);">💡 Key insight:</strong> The server was told <em>nothing</em> about the final size. It just issued an Upload ID and is now ready to accept whatever parts arrive. The producer can run for 10 seconds or 10 hours — the server doesn't care.`);
+}
+
+// ── Step ②: Generate & upload part ──
+function ussAddPart(){
+  if(!USS.initiated || USS.completed) return;
+  const src = document.getElementById('uss-source').value;
+  const cfg = SOURCE_CFG[src];
+  const mb = ussPartMB();
+
+  USS.partCount++;
+  USS.totalGenMB += mb;
+  USS.etags.push('etag-'+Math.random().toString(36).slice(2,10));
+
+  const partNum = USS.partCount;
+
+  // Producer: buffer filling
+  ussUpdateBuffer(mb);
+  document.getElementById('uss-total-gen').textContent = USS.totalGenMB + ' MB';
+  document.getElementById('uss-producer-label').textContent = `${cfg.icon} Encoding chunk ${partNum} (${mb} MB of ${cfg.unit})…`;
+
+  ussLog(`Producer: ${mb} MB of new ${cfg.unit} ready → flushing as Part ${partNum}`, 'log-info');
+
+  // Animate packet flying across
+  document.getElementById('uss-arrow').style.background = cfg.color+'44';
+  document.getElementById('uss-packet').style.background = cfg.color;
+
+  setTimeout(()=>{
+    ussAnimatePacket(()=>{
+      // Part lands on server
+      ussAddPartChip(partNum, mb, cfg.color);
+      USS.etags.push('etag-p'+partNum);
+      document.getElementById('uss-obj-size').textContent = `❓ unknown (${USS.totalGenMB}+ MB so far)`;
+      document.getElementById('uss-parts-flushed').textContent = partNum;
+      document.getElementById('uss-server-label').textContent = `Part ${partNum} received & verified`;
+      document.getElementById('uss-server-status').textContent = `${partNum} part(s) stored`;
+      ussUpdateBuffer(0);
+      ussLog(`PUT /uploads/${USS.uploadId}/parts/${partNum}  (${mb} MB)  ← ETag: "${USS.etags[partNum-1]}"`, 'log-ok');
+
+      document.getElementById('uss-arrow').style.background = 'var(--border2)';
+
+      // Rotating insights
+      const insights = [
+        `<strong style="color:var(--accent2);">💡 Part ${partNum} stored.</strong> The server still doesn't know if part ${partNum+1} is coming. It doesn't need to. It just stores what it receives and waits for the <code style="color:var(--accent2)">complete</code> signal.`,
+        `<strong style="color:var(--teal);">📦 ${USS.totalGenMB} MB uploaded so far.</strong> If the stream had crashed here, the next session could <em>resume</em> from Part ${partNum+1} — no need to re-upload earlier parts.`,
+        `<strong style="color:var(--purple);">🔐 Checksum verified.</strong> Each part's ETag is a checksum. S3 verifies it on arrival. Corruption is caught immediately, not at the end after all that upload time.`,
+        `<strong style="color:var(--amber);">⚡ Parallel possible.</strong> While the producer generates Part ${partNum+1}, Part ${partNum} is already safely stored on S3. In a real system, multiple workers could generate and upload parts simultaneously.`,
+      ];
+      ussShowInsight(insights[(partNum-1) % insights.length]);
+    });
+  }, 100);
+}
+
+// ── Step ③: Complete ──
+function ussComplete(){
+  if(!USS.initiated || USS.completed || USS.partCount===0) return;
+  USS.completed = true;
+
+  document.getElementById('uss-btn-part').disabled = true;
+  document.getElementById('uss-btn-complete').disabled = true;
+  ussSetProducerDot(false);
+
+  const totalMB = USS.totalGenMB;
+  const src = document.getElementById('uss-source').value;
+  const cfg = SOURCE_CFG[src];
+
+  document.getElementById('uss-producer-label').textContent = `${cfg.icon} Stream ended. No more data.`;
+  document.getElementById('uss-server-label').textContent = 'Assembling object…';
+  document.getElementById('uss-server-status').textContent = 'assembling';
+
+  ussLog(`Stream stopped by producer after ${USS.partCount} parts (${totalMB} MB total)`, 'log-warn');
+  ussLog(`POST /uploads/${USS.uploadId}/complete`, 'log-info');
+  ussLog(`{ parts:[${[...Array(USS.partCount)].map((_,i)=>i+1)}], etags:[...${USS.partCount} etags...] }`, 'log-info');
+
+  setTimeout(()=>{
+    document.getElementById('uss-obj-size').textContent = `✅ ${totalMB} MB (now known!)`;
+    document.getElementById('uss-server-label').textContent = 'Object assembled & available';
+    document.getElementById('uss-server-status').textContent = '✅ complete';
+    ussSetServerDot(false);
+
+    // Mark all chips green
+    document.querySelectorAll('#uss-parts-row div').forEach(chip=>{
+      chip.style.borderColor = 'var(--green)';
+      chip.style.color = 'var(--green)';
+      chip.style.background = '#0B201044';
+    });
+
+    ussLog(`← HTTP 200  { size: ${totalMB}MB, parts: ${USS.partCount}, key: "stream-output" }`, 'log-ok');
+    ussLog(`🎉 Object is now accessible. Final size: ${totalMB} MB.`, 'log-done');
+
+    ussShowInsight(`
+      <strong style="color:var(--green);">✅ Upload complete!</strong> The server only learned the final size (<strong>${totalMB} MB</strong>) when you sent the complete request — and that's perfectly fine with multipart upload.<br/><br/>
+      <strong style="color:var(--accent2);">Summary:</strong> ${USS.partCount} parts · ${totalMB} MB · Size was unknown for the entire upload duration. This is exactly how live video platforms, log shippers, and data pipelines work at scale.
+    `);
+  }, 900);
+}
+
+// ── Reset ──
+function ussReset(){
+  USS.uploadId=null; USS.partCount=0; USS.totalGenMB=0; USS.bufferMB=0; USS.etags=[]; USS.initiated=false; USS.completed=false;
+  document.getElementById('uss-log').textContent='Waiting to start…';
+  document.getElementById('uss-uid').textContent='—';
+  document.getElementById('uss-obj-size').textContent='unknown';
+  document.getElementById('uss-server-status').textContent='waiting';
+  document.getElementById('uss-server-label').textContent='No upload initiated';
+  document.getElementById('uss-producer-label').textContent='Waiting to start…';
+  document.getElementById('uss-total-gen').textContent='0 MB';
+  document.getElementById('uss-parts-flushed').textContent='0';
+  document.getElementById('uss-parts-row').innerHTML='';
+  document.getElementById('uss-insight').style.display='none';
+  ussUpdateBuffer(0);
+  ussSetProducerDot(false);
+  ussSetServerDot(false);
+  document.getElementById('uss-btn-init').disabled=false;
+  document.getElementById('uss-btn-part').disabled=true;
+  document.getElementById('uss-btn-complete').disabled=true;
+  document.getElementById('uss-source').disabled=false;
+}
+
+
 const revealEls=document.querySelectorAll('.reveal');
 const obs=new IntersectionObserver(entries=>{
   entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}});
