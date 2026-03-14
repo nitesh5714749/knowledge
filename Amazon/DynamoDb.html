@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DynamoDB Core Components</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #ff6b35;
+    --accent2: #00d4aa;
+    --accent3: #a78bfa;
+    --text: #e8e8f0;
+    --muted: #7878a0;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ---- GRID BACKGROUND ---- */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,107,53,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,107,53,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ---- HERO ---- */
+  .hero {
+    position: relative;
+    z-index: 1;
+    padding: 80px 60px 60px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .hero-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hero-label::before {
+    content: '';
+    width: 30px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-size: clamp(42px, 6vw, 80px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+  h1 span { color: var(--accent); }
+
+  .hero-desc {
+    font-size: 16px;
+    color: var(--muted);
+    max-width: 500px;
+    line-height: 1.7;
+    margin-bottom: 50px;
+    font-weight: 400;
+  }
+
+  /* ---- NAV PILLS ---- */
+  .nav {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,10,15,0.9);
+    backdrop-filter: blur(12px);
+    padding: 16px 60px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .nav-pill:hover { border-color: var(--accent); color: var(--accent); }
+  .nav-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0a0a0f;
+    font-weight: 700;
+  }
+
+  /* ---- SECTIONS ---- */
+  .sections { max-width: 1200px; margin: 0 auto; padding: 60px 60px 100px; position: relative; z-index: 1; }
+
+  .section { display: none; }
+  .section.active { display: block; animation: fadeIn 0.3s ease; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .section-header {
+    margin-bottom: 50px;
+  }
+  .section-number {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .section-subtitle {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 600px;
+    font-weight: 400;
+  }
+
+  /* ---- CARDS ---- */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 40px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.2s;
+    transform-origin: left;
+  }
+  .card:hover::before { transform: scaleX(1); }
+
+  .card-icon {
+    font-size: 24px;
+    margin-bottom: 16px;
+    display: block;
+  }
+  .card-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+  .card-body { font-size: 13px; color: var(--muted); line-height: 1.7; font-weight: 400; }
+
+  /* ---- JSON VIEWER ---- */
+  .json-demo {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px;
+    margin-bottom: 40px;
+  }
+  .json-demo-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-red { background: #ff5f56; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green { background: #27c93f; }
+  .filename { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: 6px; }
+
+  .item-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .item-tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .item-tab:hover { border-color: var(--accent2); color: var(--accent2); }
+  .item-tab.active { background: var(--accent2); border-color: var(--accent2); color: #0a0a0f; font-weight: 700; }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+    color: var(--text);
+  }
+  .jk { color: #a78bfa; }
+  .jv-str { color: #86efac; }
+  .jv-num { color: #fb923c; }
+  .jv-bool { color: #60a5fa; }
+  .jv-null { color: var(--muted); }
+  .jb { color: var(--muted); }
+  .note { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 12px; padding: 10px 14px; border-left: 2px solid var(--accent); background: rgba(255,107,53,0.05); }
+
+  /* ---- SCHEMALESS VIZ ---- */
+  .schema-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 40px; }
+  .schema-col { border-right: 1px solid var(--border); }
+  .schema-col:last-child { border-right: none; }
+  .schema-head {
+    background: var(--surface2);
+    padding: 14px 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .schema-item { padding: 12px 18px; border-bottom: 1px solid rgba(42,42,58,0.5); font-size: 13px; }
+  .schema-item:last-child { border-bottom: none; }
+  .schema-item.has { color: var(--accent2); }
+  .schema-item.pk { color: var(--accent); font-weight: 600; }
+  .schema-item.missing { color: var(--border); font-style: italic; }
+
+  /* ---- PRIMARY KEY VIZ ---- */
+  .pk-viz {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+  .pk-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 24px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pk-box:hover, .pk-box.selected { border-color: var(--accent); background: rgba(255,107,53,0.05); }
+  .pk-box-type {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .pk-box-name {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+  .pk-box-desc { font-size: 13px; color: var(--muted); line-height: 1.6; font-weight: 400; }
+
+  .pk-key-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .pk-key {
+    padding: 4px 10px;
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .pk-key.partition { background: rgba(255,107,53,0.15); color: var(--accent); border: 1px solid rgba(255,107,53,0.3); }
+  .pk-key.sort { background: rgba(0,212,170,0.1); color: var(--accent2); border: 1px solid rgba(0,212,170,0.3); }
+
+  .hash-flow {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px;
+    margin-bottom: 40px;
+  }
+  .hash-flow-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .flow-steps { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .flow-step {
+    flex: 1;
+    min-width: 140px;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    text-align: center;
+  }
+  .flow-step-icon { font-size: 20px; margin-bottom: 8px; }
+  .flow-step-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .flow-step-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .flow-arrow { padding: 0 12px; color: var(--accent); font-size: 20px; }
+
+  /* ---- INDEXES ---- */
+  .index-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+  .index-box {
+    border-radius: 4px;
+    padding: 28px;
+    border: 1px solid;
+  }
+  .index-box.gsi { border-color: #a78bfa; background: rgba(167,139,250,0.05); }
+  .index-box.lsi { border-color: var(--accent2); background: rgba(0,212,170,0.05); }
+  .index-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 12px;
+  }
+  .index-badge.gsi-b { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+  .index-badge.lsi-b { background: rgba(0,212,170,0.1); color: var(--accent2); border: 1px solid rgba(0,212,170,0.3); }
+
+  .index-box-title { font-size: 20px; font-weight: 600; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .index-box-desc { font-size: 13px; color: var(--muted); line-height: 1.7; font-weight: 400; margin-bottom: 16px; }
+
+  .prop-list { list-style: none; }
+  .prop-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(42,42,58,0.5);
+    font-size: 13px;
+  }
+  .prop-list li:last-child { border-bottom: none; }
+  .prop-key { color: var(--muted); min-width: 110px; font-weight: 400; }
+  .prop-val { color: var(--text); font-family: var(--mono); font-size: 11px; }
+
+  /* ---- STREAMS ---- */
+  .stream-timeline {
+    position: relative;
+    margin-bottom: 40px;
+  }
+  .stream-line {
+    position: absolute;
+    left: 18px;
+    top: 30px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .stream-event {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .stream-event:hover { border-color: var(--accent); }
+  .stream-event-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    font-weight: 700;
+    font-family: var(--mono);
+  }
+  .ev-insert .stream-event-icon { background: rgba(0,212,170,0.15); color: var(--accent2); border: 1px solid rgba(0,212,170,0.3); }
+  .ev-modify .stream-event-icon { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+  .ev-remove .stream-event-icon { background: rgba(255,107,53,0.15); color: var(--accent); border: 1px solid rgba(255,107,53,0.3); }
+  .stream-event-body {}
+  .stream-event-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .stream-event-desc { font-size: 13px; color: var(--muted); line-height: 1.6; font-weight: 400; }
+  .stream-event-image {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    padding: 6px 10px;
+    background: rgba(255,107,53,0.05);
+    border: 1px dashed rgba(255,107,53,0.3);
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .expand-detail { display: none; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .stream-event.open .expand-detail { display: block; }
+
+  .use-cases {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  .use-case {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 22px;
+    transition: border-color 0.2s;
+  }
+  .use-case:hover { border-color: var(--accent3); }
+  .uc-num {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: rgba(167,139,250,0.2);
+    margin-bottom: 10px;
+    letter-spacing: -0.03em;
+  }
+  .uc-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .uc-desc { font-size: 12px; color: var(--muted); line-height: 1.6; font-weight: 400; }
+
+  /* ---- DIVIDER ---- */
+  .hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  /* ---- SUMMARY TABLE ---- */
+  .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .summary-table th {
+    text-align: left;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .summary-table td { padding: 12px 16px; border-bottom: 1px solid rgba(42,42,58,0.4); color: var(--text); vertical-align: top; }
+  .summary-table tr:last-child td { border-bottom: none; }
+  .summary-table tr:hover td { background: rgba(255,107,53,0.03); }
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: rgba(255,107,53,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(255,107,53,0.2);
+    margin-right: 4px;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 768px) {
+    .hero { padding: 50px 24px 40px; }
+    .nav { padding: 12px 24px; }
+    .sections { padding: 40px 24px 80px; }
+    .pk-viz, .index-compare { grid-template-columns: 1fr; }
+    .schema-grid { grid-template-columns: 1fr; }
+    .flow-steps { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-label">AWS Documentation Interactive Guide</div>
+  <h1>DynamoDB<br><span>Core Components</span></h1>
+  <p class="hero-desc">An interactive breakdown of every concept covered in the DynamoDB Core Components documentation — tables, primary keys, secondary indexes, and streams.</p>
+</div>
+
+<nav class="nav">
+  <button class="nav-pill active" onclick="showSection('overview')">Overview</button>
+  <button class="nav-pill" onclick="showSection('tables')">Tables & Items</button>
+  <button class="nav-pill" onclick="showSection('keys')">Primary Keys</button>
+  <button class="nav-pill" onclick="showSection('indexes')">Secondary Indexes</button>
+  <button class="nav-pill" onclick="showSection('streams')">DynamoDB Streams</button>
+  <button class="nav-pill" onclick="showSection('consistency')">Consistency Internals</button>
+  <button class="nav-pill" onclick="showSection('global')">Global Tables</button>
+  <button class="nav-pill" onclick="showSection('summary')">Quick Reference</button>
+</nav>
+
+<div class="sections">
+
+  <!-- OVERVIEW -->
+  <div id="section-overview" class="section active">
+    <div class="section-header">
+      <div class="section-number">00 — OVERVIEW</div>
+      <div class="section-title">What is DynamoDB?</div>
+      <div class="section-subtitle">A fully managed NoSQL database by AWS. Fast, scalable, and schemaless — built for applications that need consistent performance at any scale.</div>
+    </div>
+    <div class="card-grid">
+      <div class="card" onclick="showSection('tables')">
+        <span class="card-icon">📦</span>
+        <div class="card-label">Section 01</div>
+        <div class="card-title">Tables, Items & Attributes</div>
+        <div class="card-body">The building blocks. Tables hold items (rows), items hold attributes (fields). The key difference: every item can have different attributes — no rigid schema.</div>
+      </div>
+      <div class="card" onclick="showSection('keys')">
+        <span class="card-icon">🔑</span>
+        <div class="card-label">Section 02</div>
+        <div class="card-title">Primary Keys</div>
+        <div class="card-body">Every item needs a primary key. Choose between a simple partition key or a composite partition + sort key. The hash function determines physical storage placement.</div>
+      </div>
+      <div class="card" onclick="showSection('indexes')">
+        <span class="card-icon">🔍</span>
+        <div class="card-label">Section 03</div>
+        <div class="card-title">Secondary Indexes</div>
+        <div class="card-body">Query your data by attributes other than the primary key. GSIs span the whole table with different keys. LSIs keep the same partition key but different sort key.</div>
+      </div>
+      <div class="card" onclick="showSection('streams')">
+        <span class="card-icon">&#9889;</span>
+        <div class="card-label">Section 04</div>
+        <div class="card-title">DynamoDB Streams</div>
+        <div class="card-body">An ordered log of every data change — insert, modify, delete — in near real-time. Pair with Lambda to trigger reactions to data events.</div>
+      </div>
+      <div class="card" onclick="showSection('consistency')">
+        <span class="card-icon">&#128300;</span>
+        <div class="card-label">Section 05</div>
+        <div class="card-title">Consistency Internals</div>
+        <div class="card-body">Why LSI supports strong consistency but GSI does not. Rooted in physical co-location — same partition node vs async projection to a separate one.</div>
+      </div>
+      <div class="card" onclick="showSection('global')">
+        <span class="card-icon">&#127757;</span>
+        <div class="card-label">Section 06</div>
+        <div class="card-title">Global Tables</div>
+        <div class="card-body">The same table replicated across multiple AWS regions. Read and write locally for low latency. Choose eventual or strong cross-region consistency.</div>
+      </div>
+    </div>
+    <div class="hash-flow">
+      <div class="hash-flow-label">DynamoDB at a glance</div>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-icon">📝</div>
+          <div class="flow-step-title">Your App</div>
+          <div class="flow-step-sub">writes / reads</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">📋</div>
+          <div class="flow-step-title">Table</div>
+          <div class="flow-step-sub">collection of items</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">🔑</div>
+          <div class="flow-step-title">Primary Key</div>
+          <div class="flow-step-sub">partition key + sort key</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">#</div>
+          <div class="flow-step-title">Hash Function</div>
+          <div class="flow-step-sub">routes to partition</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">💾</div>
+          <div class="flow-step-title">Partition</div>
+          <div class="flow-step-sub">physical storage</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLES & ITEMS -->
+  <div id="section-tables" class="section">
+    <div class="section-header">
+      <div class="section-number">01 — TABLES, ITEMS & ATTRIBUTES</div>
+      <div class="section-title">The core building blocks</div>
+      <div class="section-subtitle">DynamoDB stores data in tables. Each table holds items, and each item holds attributes. Think of it like a database table — but flexible per row.</div>
+    </div>
+
+    <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="card">
+        <div class="card-label">Container</div>
+        <div class="card-title">Table</div>
+        <div class="card-body">A collection of data — like a table in SQL. Examples: <code>People</code>, <code>Music</code>, <code>Orders</code>. You define the primary key, the rest is flexible.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Row equivalent</div>
+        <div class="card-title">Item</div>
+        <div class="card-body">A single record in a table. Each item is uniquely identified by its primary key. No limit to the number of items. Max item size is 400 KB.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Column equivalent</div>
+        <div class="card-title">Attribute</div>
+        <div class="card-body">A key-value pair within an item. Can be scalar (String, Number, Binary) or complex (List, Map, Set). Nesting up to 32 levels deep.</div>
+      </div>
+    </div>
+
+    <div class="json-demo">
+      <div class="json-demo-header">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <span class="filename">People table — click an item to inspect it</span>
+      </div>
+      <div class="item-tabs">
+        <button class="item-tab active" onclick="showPerson(0, this)">Person 101 — Fred</button>
+        <button class="item-tab" onclick="showPerson(1, this)">Person 102 — Mary</button>
+        <button class="item-tab" onclick="showPerson(2, this)">Person 103 — Howard</button>
+      </div>
+      <pre id="person-display"></pre>
+      <div id="person-note" class="note"></div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title" style="font-size:22px;">Schemaless in action</div>
+      <div class="section-subtitle" style="font-size:14px;">See how items in the same table can have completely different attributes — only the primary key is required.</div>
+    </div>
+
+    <div class="schema-grid">
+      <div class="schema-col">
+        <div class="schema-head">Person 101 — Fred</div>
+        <div class="schema-item pk">PersonID ✦ PK</div>
+        <div class="schema-item has">LastName</div>
+        <div class="schema-item has">FirstName</div>
+        <div class="schema-item has">Phone</div>
+        <div class="schema-item missing">Address — not present</div>
+        <div class="schema-item missing">FavoriteColor — not present</div>
+      </div>
+      <div class="schema-col">
+        <div class="schema-head">Person 102 — Mary</div>
+        <div class="schema-item pk">PersonID ✦ PK</div>
+        <div class="schema-item has">LastName</div>
+        <div class="schema-item has">FirstName</div>
+        <div class="schema-item missing">Phone — not present</div>
+        <div class="schema-item has">Address (nested map)</div>
+        <div class="schema-item missing">FavoriteColor — not present</div>
+      </div>
+      <div class="schema-col">
+        <div class="schema-head">Person 103 — Howard</div>
+        <div class="schema-item pk">PersonID ✦ PK</div>
+        <div class="schema-item has">LastName</div>
+        <div class="schema-item has">FirstName</div>
+        <div class="schema-item missing">Phone — not present</div>
+        <div class="schema-item has">Address (nested map)</div>
+        <div class="schema-item has">FavoriteColor ← unique!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRIMARY KEYS -->
+  <div id="section-keys" class="section">
+    <div class="section-header">
+      <div class="section-number">02 — PRIMARY KEYS</div>
+      <div class="section-title">Uniquely identifying items</div>
+      <div class="section-subtitle">The primary key uniquely identifies each item. DynamoDB hashes it to decide which physical partition stores the data.</div>
+    </div>
+
+    <div class="pk-viz">
+      <div class="pk-box" id="pk-simple" onclick="selectPK('simple')">
+        <div class="pk-box-type">Type A — Simple</div>
+        <div class="pk-box-name">Partition Key only</div>
+        <div class="pk-box-desc">One attribute uniquely identifies each item. No two items can share the same partition key value.</div>
+        <div class="pk-key-row">
+          <span class="pk-key partition">Partition Key</span>
+        </div>
+        <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted)">
+          Example: People table<br>
+          PK = PersonID (101, 102, 103...)
+        </div>
+      </div>
+      <div class="pk-box" id="pk-composite" onclick="selectPK('composite')">
+        <div class="pk-box-type">Type B — Composite</div>
+        <div class="pk-box-name">Partition Key + Sort Key</div>
+        <div class="pk-box-desc">Two attributes combined. Multiple items can share the same partition key — but must differ on sort key. Unlocks powerful range queries.</div>
+        <div class="pk-key-row">
+          <span class="pk-key partition">Partition Key</span>
+          <span class="pk-key sort">Sort Key</span>
+        </div>
+        <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted)">
+          Example: Music table<br>
+          PK = Artist + SongTitle
+        </div>
+      </div>
+    </div>
+
+    <div id="pk-detail-simple" style="display:none;">
+      <div class="json-demo">
+        <div class="json-demo-header">
+          <div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div>
+          <span class="filename">Simple PK — People table</span>
+        </div>
+        <pre><span class="jb">[</span>
+  <span class="jb">{</span> <span class="jk">"PersonID"</span>: <span class="jv-num">101</span>, <span class="jk">"Name"</span>: <span class="jv-str">"Fred"</span> <span class="jb">}</span>,   <span style="color:var(--muted)">// PersonID 101 → unique</span>
+  <span class="jb">{</span> <span class="jk">"PersonID"</span>: <span class="jv-num">102</span>, <span class="jk">"Name"</span>: <span class="jv-str">"Mary"</span> <span class="jb">}</span>,  <span style="color:var(--muted)">// PersonID 102 → unique</span>
+  <span class="jb">{</span> <span class="jk">"PersonID"</span>: <span class="jv-num">103</span>, <span class="jk">"Name"</span>: <span class="jv-str">"Howard"</span> <span class="jb">}</span> <span style="color:var(--muted)">// PersonID 103 → unique</span>
+<span class="jb">]</span></pre>
+        <div class="note">✦ PersonID is hashed → determines which partition stores this item</div>
+      </div>
+    </div>
+
+    <div id="pk-detail-composite" style="display:none;">
+      <div class="json-demo">
+        <div class="json-demo-header">
+          <div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div>
+          <span class="filename">Composite PK — Music table</span>
+        </div>
+        <pre><span class="jb">[</span>
+  <span class="jb">{</span> <span class="jk">"Artist"</span>: <span class="jv-str">"The Beatles"</span>, <span class="jk">"SongTitle"</span>: <span class="jv-str">"Hey Jude"</span> <span class="jb">}</span>,
+  <span class="jb">{</span> <span class="jk">"Artist"</span>: <span class="jv-str">"The Beatles"</span>, <span class="jk">"SongTitle"</span>: <span class="jv-str">"Let It Be"</span> <span class="jb">}</span>,
+  <span style="color:var(--muted)">// ↑ Same Artist (partition key) — OK because SongTitle (sort key) differs</span>
+  <span class="jb">{</span> <span class="jk">"Artist"</span>: <span class="jv-str">"Radiohead"</span>,   <span class="jk">"SongTitle"</span>: <span class="jv-str">"Creep"</span> <span class="jb">}</span>
+<span class="jb">]</span></pre>
+        <div class="note">✦ Query: Artist = "The Beatles" → returns ALL their songs sorted by SongTitle</div>
+      </div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="hash-flow">
+      <div class="hash-flow-label">How partition key routing works</div>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-icon">🔑</div>
+          <div class="flow-step-title">Partition Key Value</div>
+          <div class="flow-step-sub">"The Beatles"</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">#</div>
+          <div class="flow-step-title">Hash Function</div>
+          <div class="flow-step-sub">internal to DynamoDB</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">📍</div>
+          <div class="flow-step-title">Output Hash</div>
+          <div class="flow-step-sub">0x8f3a...</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-step-icon">💾</div>
+          <div class="flow-step-title">Partition Node</div>
+          <div class="flow-step-sub">physical storage</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;font-size:13px;color:var(--muted);line-height:1.7;">
+        All items with the same partition key are stored together on the same node, sorted by their sort key value. This is why DynamoDB scales — data fans out across nodes automatically.
+      </div>
+    </div>
+  </div>
+
+  <!-- SECONDARY INDEXES -->
+  <div id="section-indexes" class="section">
+    <div class="section-header">
+      <div class="section-number">03 — SECONDARY INDEXES</div>
+      <div class="section-title">Query beyond the primary key</div>
+      <div class="section-subtitle">Secondary indexes give you alternative query paths. You design your table around primary access patterns, then add indexes for secondary ones.</div>
+    </div>
+
+    <div class="index-compare">
+      <div class="index-box gsi">
+        <span class="index-badge gsi-b">GSI — Global Secondary Index</span>
+        <div class="index-box-title">Completely different keys</div>
+        <div class="index-box-desc">A GSI can have a totally different partition key and sort key from the base table. It spans the entire table — all partitions.</div>
+        <ul class="prop-list">
+          <li><span class="prop-key">Partition key</span><span class="prop-val">any attribute</span></li>
+          <li><span class="prop-key">Sort key</span><span class="prop-val">any attribute (optional)</span></li>
+          <li><span class="prop-key">When created</span><span class="prop-val">anytime</span></li>
+          <li><span class="prop-key">Limit per table</span><span class="prop-val">20 (default)</span></li>
+          <li><span class="prop-key">Consistency</span><span class="prop-val">eventually consistent</span></li>
+          <li><span class="prop-key">Key uniqueness</span><span class="prop-val">not required</span></li>
+        </ul>
+      </div>
+      <div class="index-box lsi">
+        <span class="index-badge lsi-b">LSI — Local Secondary Index</span>
+        <div class="index-box-title">Same partition, new sort</div>
+        <div class="index-box-desc">An LSI keeps the same partition key as the base table but uses a different sort key. "Local" means it only queries within one partition.</div>
+        <ul class="prop-list">
+          <li><span class="prop-key">Partition key</span><span class="prop-val">same as table</span></li>
+          <li><span class="prop-key">Sort key</span><span class="prop-val">different from table</span></li>
+          <li><span class="prop-key">When created</span><span class="prop-val">table creation only</span></li>
+          <li><span class="prop-key">Limit per table</span><span class="prop-val">5</span></li>
+          <li><span class="prop-key">Consistency</span><span class="prop-val">strongly consistent option</span></li>
+          <li><span class="prop-key">Key uniqueness</span><span class="prop-val">not required</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="json-demo">
+      <div class="json-demo-header">
+        <div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div>
+        <span class="filename">Music table — GSI example: GenreAlbumTitle index</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:start;margin-bottom:16px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:0.15em;margin-bottom:10px;">BASE TABLE KEYS</div>
+          <div class="pk-key-row">
+            <span class="pk-key partition">Artist (PK)</span>
+            <span class="pk-key sort">SongTitle (SK)</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:10px;">Query: Get all songs by an artist</div>
+        </div>
+        <div style="font-size:24px;color:var(--muted);padding-top:24px;">→</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:#a78bfa;letter-spacing:0.15em;margin-bottom:10px;">GSI: GenreAlbumTitle</div>
+          <div class="pk-key-row">
+            <span class="pk-key" style="background:rgba(167,139,250,0.15);color:#a78bfa;border-color:rgba(167,139,250,0.3)">Genre (PK)</span>
+            <span class="pk-key" style="background:rgba(167,139,250,0.1);color:#a78bfa;border-color:rgba(167,139,250,0.2)">AlbumTitle (SK)</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:10px;">Query: Get all Rock albums starting with "T"</div>
+        </div>
+      </div>
+      <div class="note">✦ DynamoDB auto-syncs the index — every write to the Music table updates GenreAlbumTitle automatically</div>
+    </div>
+
+    <div class="card" style="margin-top:0">
+      <div class="card-label">Important concept</div>
+      <div class="card-title">Projection</div>
+      <div class="card-body">When creating an index, you choose which attributes to <em>project</em> (copy) into it. At minimum, the primary key attributes are always projected. You can also project ALL attributes or a specific INCLUDE list — more projection means faster reads but more storage cost.</div>
+    </div>
+  </div>
+
+  <!-- STREAMS -->
+  <div id="section-streams" class="section">
+    <div class="section-header">
+      <div class="section-number">04 — DYNAMODB STREAMS</div>
+      <div class="section-title">React to data changes</div>
+      <div class="section-subtitle">Streams captures every modification to your table as an ordered, time-stamped log. Optional feature — enable per table. Records expire after 24 hours.</div>
+    </div>
+
+    <div class="card-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:40px;">
+      <div class="card">
+        <div class="card-label">Retention</div>
+        <div class="card-title" style="font-size:28px;font-weight:800;color:var(--accent)">24h</div>
+        <div class="card-body">Stream records automatically expire after 24 hours.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Ordering</div>
+        <div class="card-title" style="font-size:18px;">Per-item ordered</div>
+        <div class="card-body">Changes to the same item appear in strict order. Cross-item ordering is not guaranteed.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Latency</div>
+        <div class="card-title" style="font-size:18px;">Near real-time</div>
+        <div class="card-body">Events appear in the stream within milliseconds of the write completing.</div>
+      </div>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:16px;">Click each event type to see what the stream record contains</div>
+
+    <div class="stream-timeline">
+      <div class="stream-event ev-insert" onclick="toggleEvent(this)">
+        <div class="stream-event-icon">+</div>
+        <div class="stream-event-body">
+          <div class="stream-event-name">INSERT — New item added</div>
+          <div class="stream-event-desc">A new item is written to the table for the first time.</div>
+          <div class="stream-event-image">Captures: NEW_IMAGE (full new item)</div>
+          <div class="expand-detail">
+            <pre><span class="jb">{</span>
+  <span class="jk">"eventName"</span>: <span class="jv-str">"INSERT"</span>,
+  <span class="jk">"dynamodb"</span>: <span class="jb">{</span>
+    <span class="jk">"NewImage"</span>: <span class="jb">{</span>
+      <span class="jk">"PersonID"</span>: <span class="jb">{</span><span class="jk">"N"</span>: <span class="jv-str">"104"</span><span class="jb">}</span>,
+      <span class="jk">"Name"</span>: <span class="jb">{</span><span class="jk">"S"</span>: <span class="jv-str">"Alice"</span><span class="jb">}</span>
+    <span class="jb">}</span>,
+    <span class="jk">"OldImage"</span>: <span class="jv-null">null</span>  <span style="color:var(--muted)">// nothing before</span>
+  <span class="jb">}</span>
+<span class="jb">}</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="stream-event ev-modify" onclick="toggleEvent(this)">
+        <div class="stream-event-icon">~</div>
+        <div class="stream-event-body">
+          <div class="stream-event-name">MODIFY — Item updated</div>
+          <div class="stream-event-desc">One or more attributes on an existing item are changed.</div>
+          <div class="stream-event-image">Captures: OLD_IMAGE + NEW_IMAGE (before and after)</div>
+          <div class="expand-detail">
+            <pre><span class="jb">{</span>
+  <span class="jk">"eventName"</span>: <span class="jv-str">"MODIFY"</span>,
+  <span class="jk">"dynamodb"</span>: <span class="jb">{</span>
+    <span class="jk">"OldImage"</span>: <span class="jb">{</span> <span class="jk">"Phone"</span>: <span class="jb">{</span><span class="jk">"S"</span>: <span class="jv-str">"555-1234"</span><span class="jb">}</span> <span class="jb">}</span>,
+    <span class="jk">"NewImage"</span>: <span class="jb">{</span> <span class="jk">"Phone"</span>: <span class="jb">{</span><span class="jk">"S"</span>: <span class="jv-str">"555-9999"</span><span class="jb">}</span> <span class="jb">}</span>
+    <span style="color:var(--muted)">// Both before and after are captured</span>
+  <span class="jb">}</span>
+<span class="jb">}</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="stream-event ev-remove" onclick="toggleEvent(this)">
+        <div class="stream-event-icon">−</div>
+        <div class="stream-event-body">
+          <div class="stream-event-name">REMOVE — Item deleted</div>
+          <div class="stream-event-desc">An existing item is removed from the table entirely.</div>
+          <div class="stream-event-image">Captures: OLD_IMAGE (full item before deletion)</div>
+          <div class="expand-detail">
+            <pre><span class="jb">{</span>
+  <span class="jk">"eventName"</span>: <span class="jv-str">"REMOVE"</span>,
+  <span class="jk">"dynamodb"</span>: <span class="jb">{</span>
+    <span class="jk">"OldImage"</span>: <span class="jb">{</span>
+      <span class="jk">"PersonID"</span>: <span class="jb">{</span><span class="jk">"N"</span>: <span class="jv-str">"102"</span><span class="jb">}</span>,
+      <span class="jk">"Name"</span>: <span class="jb">{</span><span class="jk">"S"</span>: <span class="jv-str">"Mary"</span><span class="jb">}</span>
+    <span class="jb">}</span>,
+    <span class="jk">"NewImage"</span>: <span class="jv-null">null</span>  <span style="color:var(--muted)">// item is gone</span>
+  <span class="jb">}</span>
+<span class="jb">}</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title" style="font-size:22px;">Common use cases</div>
+    </div>
+    <div class="use-cases">
+      <div class="use-case">
+        <div class="uc-num">01</div>
+        <div class="uc-title">Lambda triggers</div>
+        <div class="uc-desc">Run code on every table event — e.g. send a welcome email when a new customer row is inserted.</div>
+      </div>
+      <div class="use-case">
+        <div class="uc-num">02</div>
+        <div class="uc-title">Cross-region replication</div>
+        <div class="uc-desc">Mirror writes to another AWS region for disaster recovery or low-latency global access.</div>
+      </div>
+      <div class="use-case">
+        <div class="uc-num">03</div>
+        <div class="uc-title">Materialized views</div>
+        <div class="uc-desc">Maintain aggregated or transformed views of your data in a separate table or store.</div>
+      </div>
+      <div class="use-case">
+        <div class="uc-num">04</div>
+        <div class="uc-title">Audit trail</div>
+        <div class="uc-desc">Keep a timestamped history of every change for compliance, debugging, or rollback.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONSISTENCY INTERNALS -->
+  <div id="section-consistency" class="section">
+    <div class="section-header">
+      <div class="section-number">05 — CONSISTENCY INTERNALS</div>
+      <div class="section-title">Why LSI can be strongly consistent but GSI cannot</div>
+      <div class="section-subtitle">This is an architectural decision rooted in where data physically lives. Click each index type below to understand the internal mechanics.</div>
+    </div>
+
+    <!-- Interactive toggle -->
+    <div style="display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;">
+      <button class="nav-pill active" id="con-btn-lsi" onclick="showConsistency('lsi')">LSI — Co-located</button>
+      <button class="nav-pill" id="con-btn-gsi" onclick="showConsistency('gsi')">GSI — Separate partitions</button>
+      <button class="nav-pill" id="con-btn-stream" onclick="showConsistency('stream')">Streams — Async log</button>
+    </div>
+
+    <div id="con-lsi" class="con-panel">
+      <div class="index-box lsi" style="margin-bottom:20px;">
+        <span class="index-badge lsi-b">LSI — Local Secondary Index</span>
+        <div class="index-box-title">Same physical partition = sync possible</div>
+        <div class="index-box-desc">An LSI shares the same partition key as the base table. This means the LSI data lives on the <em>same physical partition node</em> as the base table data.</div>
+        <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <div style="background:rgba(0,212,170,0.07);border:1px solid rgba(0,212,170,0.2);border-radius:4px;padding:14px;">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent2);letter-spacing:0.15em;margin-bottom:8px;">BASE TABLE PARTITION</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.7;">Item writes land here. The LSI index entry sits on the <strong>same node</strong>. Both can be updated in a single atomic operation.</div>
+          </div>
+          <div style="background:rgba(0,212,170,0.07);border:1px solid rgba(0,212,170,0.2);border-radius:4px;padding:14px;">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent2);letter-spacing:0.15em;margin-bottom:8px;">LSI INDEX (same node)</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.7;">Because it's co-located, a write commits <strong>both</strong> the base item and the LSI entry together — no lag. Strong consistency is possible.</div>
+          </div>
+        </div>
+      </div>
+      <div class="hash-flow">
+        <div class="hash-flow-label">Write flow — LSI (synchronous)</div>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="flow-step-icon">✍️</div><div class="flow-step-title">App writes item</div><div class="flow-step-sub">to base table</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step"><div class="flow-step-icon">💾</div><div class="flow-step-title">Partition node</div><div class="flow-step-sub">same physical node</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">🔄</div><div class="flow-step-title">LSI updated</div><div class="flow-step-sub">atomically, same commit</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">✅</div><div class="flow-step-title">Read = latest</div><div class="flow-step-sub">strongly consistent</div></div>
+        </div>
+      </div>
+      <div class="note" style="border-color:var(--accent2);background:rgba(0,212,170,0.05);">✦ Strong consistency supported: Table ✓ &nbsp;|&nbsp; LSI ✓ &nbsp;|&nbsp; GSI ✗ &nbsp;|&nbsp; Streams ✗</div>
+    </div>
+
+    <div id="con-gsi" class="con-panel" style="display:none;">
+      <div class="index-box gsi" style="margin-bottom:20px;">
+        <span class="index-badge gsi-b">GSI — Global Secondary Index</span>
+        <div class="index-box-title">Different partition key = physically separated</div>
+        <div class="index-box-desc">A GSI can have a completely different partition key from the base table. This means GSI data is distributed across <em>different physical partition nodes</em> — nodes the base table write doesn't control.</div>
+        <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <div style="background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:4px;padding:14px;">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:0.15em;margin-bottom:8px;">BASE TABLE PARTITION</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.7;">Write commits here immediately. Base table is up to date instantly.</div>
+          </div>
+          <div style="background:rgba(255,107,53,0.04);border:1px dashed rgba(255,107,53,0.2);border-radius:4px;padding:14px;">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.15em;margin-bottom:8px;">GSI PARTITION (different node)</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.7;">Update is <strong>projected asynchronously</strong>. A small lag exists before the GSI reflects the latest state — hence no strong consistency guarantee.</div>
+          </div>
+        </div>
+      </div>
+      <div class="hash-flow">
+        <div class="hash-flow-label">Write flow — GSI (asynchronous projection)</div>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="flow-step-icon">✍️</div><div class="flow-step-title">App writes item</div><div class="flow-step-sub">to base table</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">✅</div><div class="flow-step-title">Base committed</div><div class="flow-step-sub">immediately consistent</div></div>
+          <div class="flow-arrow" style="color:var(--muted)">→</div>
+          <div class="flow-step" style="border-color:rgba(255,107,53,0.2);opacity:0.7"><div class="flow-step-icon">⏳</div><div class="flow-step-title">GSI projection</div><div class="flow-step-sub">async, small delay</div></div>
+          <div class="flow-arrow" style="color:var(--muted)">→</div>
+          <div class="flow-step" style="border-color:rgba(255,107,53,0.2);opacity:0.7"><div class="flow-step-icon">🔶</div><div class="flow-step-title">GSI updated</div><div class="flow-step-sub">eventually consistent only</div></div>
+        </div>
+      </div>
+      <div class="note">✦ GSI reads are <strong>always eventually consistent</strong> — there is no API option to request strong consistency on a GSI.</div>
+    </div>
+
+    <div id="con-stream" class="con-panel" style="display:none;">
+      <div class="stream-event ev-modify" style="cursor:default;margin-bottom:20px;">
+        <div class="stream-event-icon">~</div>
+        <div class="stream-event-body">
+          <div class="stream-event-name">Streams — asynchronous by design</div>
+          <div class="stream-event-desc">DynamoDB Streams is an event log that captures changes <em>after</em> they are committed to the base table. The stream record is written independently, after the write completes — making strong consistency reads on a stream impossible by design.</div>
+        </div>
+      </div>
+      <div class="hash-flow">
+        <div class="hash-flow-label">Write flow — Streams</div>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="flow-step-icon">✍️</div><div class="flow-step-title">App write</div><div class="flow-step-sub">committed to table</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">✅</div><div class="flow-step-title">Write done</div><div class="flow-step-sub">base table consistent</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(167,139,250,0.3);background:rgba(167,139,250,0.05)"><div class="flow-step-icon">📋</div><div class="flow-step-title">Stream record</div><div class="flow-step-sub">written async, after</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(167,139,250,0.3);background:rgba(167,139,250,0.05)"><div class="flow-step-icon">⚡</div><div class="flow-step-title">Consumer reads</div><div class="flow-step-sub">near-real-time, not strong</div></div>
+        </div>
+      </div>
+      <div class="note" style="border-color:#a78bfa;background:rgba(167,139,250,0.05);">✦ Streams are ordered and near-real-time, but they do not support strongly consistent reads — by architecture.</div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title" style="font-size:22px;">Consistency support matrix</div>
+    </div>
+    <div class="json-demo" style="padding:0;overflow:hidden;">
+      <table class="summary-table" style="margin-bottom:0;">
+        <thead>
+          <tr>
+            <th>Read target</th>
+            <th>Strongly consistent?</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag">Table</span></td>
+            <td style="color:var(--accent2);font-family:var(--mono);font-size:12px;">✓ YES</td>
+            <td style="color:var(--muted);font-size:13px;">Reads go directly to the primary partition — always latest.</td>
+          </tr>
+          <tr>
+            <td><span class="tag">LSI</span></td>
+            <td style="color:var(--accent2);font-family:var(--mono);font-size:12px;">✓ YES</td>
+            <td style="color:var(--muted);font-size:13px;">Co-located on the same physical partition. Updated atomically with base table write.</td>
+          </tr>
+          <tr>
+            <td><span class="tag">GSI</span></td>
+            <td style="color:var(--accent);font-family:var(--mono);font-size:12px;">✗ NO</td>
+            <td style="color:var(--muted);font-size:13px;">Lives on separate partitions. Updated asynchronously. Lag is unavoidable.</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Streams</span></td>
+            <td style="color:var(--accent);font-family:var(--mono);font-size:12px;">✗ NO</td>
+            <td style="color:var(--muted);font-size:13px;">Written after the commit, independently. Async by architecture.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- GLOBAL TABLES -->
+  <div id="section-global" class="section">
+    <div class="section-header">
+      <div class="section-number">06 — GLOBAL TABLES</div>
+      <div class="section-title">One table, multiple regions</div>
+      <div class="section-subtitle">A Global Table is the same DynamoDB table deployed across multiple AWS regions simultaneously. Each region hosts a full replica — readable and writable.</div>
+    </div>
+
+    <div class="card-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:40px;">
+      <div class="card">
+        <span class="card-icon">🌍</span>
+        <div class="card-label">Multi-region</div>
+        <div class="card-title">Same table, every region</div>
+        <div class="card-body">Same name, same primary key schema deployed in us-east-1, eu-west-1, ap-southeast-1, etc. Users always hit their nearest region.</div>
+      </div>
+      <div class="card">
+        <span class="card-icon">⚡</span>
+        <div class="card-label">Low latency</div>
+        <div class="card-title">Read & write locally</div>
+        <div class="card-body">A user in Tokyo reads and writes to the Tokyo replica — single-digit millisecond latency, not a round-trip to us-east-1.</div>
+      </div>
+      <div class="card">
+        <span class="card-icon">🛡️</span>
+        <div class="card-label">High availability</div>
+        <div class="card-title">Region failure? No downtime</div>
+        <div class="card-body">If one region goes offline, all other replicas continue serving traffic. Your app routes around the failure automatically.</div>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔄</span>
+        <div class="card-label">Auto-replication</div>
+        <div class="card-title">Writes propagate everywhere</div>
+        <div class="card-body">A write in Frankfurt is automatically replicated to all other regions. You don't manage this — DynamoDB handles it.</div>
+      </div>
+    </div>
+
+    <!-- Replication modes -->
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title" style="font-size:22px;">Replication consistency modes</div>
+      <div class="section-subtitle" style="font-size:14px;">Click each mode to understand the trade-offs.</div>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+      <button class="nav-pill active" id="rep-btn-eventual" onclick="showRepMode('eventual')">Multi-Region Eventual</button>
+      <button class="nav-pill" id="rep-btn-strong" onclick="showRepMode('strong')">Multi-Region Strong</button>
+    </div>
+
+    <div id="rep-eventual">
+      <div class="index-box" style="border-color:#a78bfa;background:rgba(167,139,250,0.05);margin-bottom:20px;">
+        <span class="index-badge" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);">Eventual consistency</span>
+        <div class="index-box-title">Async replication — fast writes, slight lag</div>
+        <div class="index-box-desc">A write in Region A is committed locally first, then replicated to all other regions asynchronously. There is a brief window where Region B might serve a slightly stale read.</div>
+        <ul class="prop-list" style="margin-top:12px;">
+          <li><span class="prop-key">Write latency</span><span class="prop-val">low — commits locally</span></li>
+          <li><span class="prop-key">Read freshness</span><span class="prop-val">slight lag possible across regions</span></li>
+          <li><span class="prop-key">Cost</span><span class="prop-val">lower than strong mode</span></li>
+          <li><span class="prop-key">Use case</span><span class="prop-val">most apps — social feeds, catalogs, sessions</span></li>
+        </ul>
+      </div>
+      <div class="hash-flow">
+        <div class="hash-flow-label">Eventual replication flow</div>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="flow-step-icon">✍️</div><div class="flow-step-title">Write to us-east-1</div><div class="flow-step-sub">committed immediately</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">✅</div><div class="flow-step-title">us-east-1 up to date</div><div class="flow-step-sub">instant</div></div>
+          <div class="flow-arrow" style="color:var(--muted)">⟶</div>
+          <div class="flow-step" style="opacity:0.65"><div class="flow-step-icon">⏳</div><div class="flow-step-title">eu-west-1</div><div class="flow-step-sub">async, small delay</div></div>
+          <div class="flow-arrow" style="color:var(--muted)">⟶</div>
+          <div class="flow-step" style="opacity:0.65"><div class="flow-step-icon">⏳</div><div class="flow-step-title">ap-southeast-1</div><div class="flow-step-sub">async, small delay</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="rep-strong" style="display:none;">
+      <div class="index-box" style="border-color:var(--accent2);background:rgba(0,212,170,0.05);margin-bottom:20px;">
+        <span class="index-badge lsi-b">Strong consistency</span>
+        <div class="index-box-title">Sync replication — any region sees latest data</div>
+        <div class="index-box-desc">A write is not acknowledged until it has been replicated to all participating regions. Any read, in any region, will always return the most recent write.</div>
+        <ul class="prop-list" style="margin-top:12px;">
+          <li><span class="prop-key">Write latency</span><span class="prop-val">higher — must wait for all regions</span></li>
+          <li><span class="prop-key">Read freshness</span><span class="prop-val">always latest, everywhere</span></li>
+          <li><span class="prop-key">Cost</span><span class="prop-val">higher than eventual mode</span></li>
+          <li><span class="prop-key">Additional constraints</span><span class="prop-val">not available with all features</span></li>
+          <li><span class="prop-key">Use case</span><span class="prop-val">financial transactions, inventory, bookings</span></li>
+        </ul>
+      </div>
+      <div class="hash-flow">
+        <div class="hash-flow-label">Strong replication flow</div>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="flow-step-icon">✍️</div><div class="flow-step-title">Write initiated</div><div class="flow-step-sub">in us-east-1</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">🔄</div><div class="flow-step-title">All regions updated</div><div class="flow-step-sub">synchronously</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">✅</div><div class="flow-step-title">Acknowledged</div><div class="flow-step-sub">only after all confirm</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)"><div class="flow-step-icon">📖</div><div class="flow-step-title">Any region reads latest</div><div class="flow-step-sub">guaranteed</div></div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title" style="font-size:22px;">Design rules & trade-offs</div>
+    </div>
+    <div class="card-grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));">
+      <div class="card">
+        <div class="card-label">Hard constraint</div>
+        <div class="card-title">Schema must match</div>
+        <div class="card-body">All replicas share the exact same primary key and sort key schema. You cannot have different key structures per region.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Trade-off</div>
+        <div class="card-title">Conflict handling</div>
+        <div class="card-body">Two regions can accept writes to the same item simultaneously. DynamoDB uses last-writer-wins (by timestamp) to resolve conflicts. Plan your write patterns carefully.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Cost</div>
+        <div class="card-title">Replicated WCUs</div>
+        <div class="card-body">Each write is consumed in every replica region. A write to a 3-region global table costs 3× the WCU of a single-region write.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Throughput</div>
+        <div class="card-title">Plan per region</div>
+        <div class="card-body">Each replica needs enough provisioned or on-demand capacity to handle the full workload — replicated writes count against the destination region's capacity too.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUICK REFERENCE -->
+  <div id="section-summary" class="section">
+    <div class="section-header">
+      <div class="section-number">07 — QUICK REFERENCE</div>
+      <div class="section-title">Everything at a glance</div>
+      <div class="section-subtitle">A complete summary of every concept from the DynamoDB Core Components documentation.</div>
+    </div>
+
+    <div class="json-demo">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Concept</th>
+            <th>What it is</th>
+            <th>Key rules</th>
+            <th>Analogy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag">Table</span></td>
+            <td>Container for all your data</td>
+            <td>Must define primary key at creation</td>
+            <td>SQL table</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Item</span></td>
+            <td>A single record in a table</td>
+            <td>Max 400 KB, no limit on count</td>
+            <td>SQL row</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Attribute</span></td>
+            <td>A key-value field on an item</td>
+            <td>No schema required. Nest up to 32 levels</td>
+            <td>SQL column (flexible)</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Partition Key</span></td>
+            <td>Simple primary key (1 attribute)</td>
+            <td>Must be String, Number, or Binary. Must be unique</td>
+            <td>Primary key</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Sort Key</span></td>
+            <td>Second part of composite primary key</td>
+            <td>Combined with partition key → unique item</td>
+            <td>Compound PK</td>
+          </tr>
+          <tr>
+            <td><span class="tag">GSI</span></td>
+            <td>Index with different PK + SK from table</td>
+            <td>Up to 20 per table. Eventual consistency only</td>
+            <td>Alternative index</td>
+          </tr>
+          <tr>
+            <td><span class="tag">LSI</span></td>
+            <td>Index with same PK, different SK</td>
+            <td>Up to 5 per table. Must be created with table. Supports strong consistency</td>
+            <td>Local index</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Stream</span></td>
+            <td>Change log for all table modifications</td>
+            <td>Records expire after 24h. Eventual only. Per-item ordering guaranteed</td>
+            <td>CDC / event log</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Projection</span></td>
+            <td>Attributes copied into an index</td>
+            <td>ALL, KEYS_ONLY, or INCLUDE (specific list)</td>
+            <td>Index columns</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Global Table</span></td>
+            <td>Same table replicated across AWS regions</td>
+            <td>Same key schema everywhere. Writes replicated auto. Last-writer-wins conflicts</td>
+            <td>Multi-master DB</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Eventual (Global)</span></td>
+            <td>Async cross-region replication</td>
+            <td>Low write latency. Slight read lag across regions</td>
+            <td>Async replication</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Strong (Global)</span></td>
+            <td>Sync cross-region replication</td>
+            <td>Higher write latency. Any region always returns latest data</td>
+            <td>Sync replication</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const people = [
+    {
+      json: `<span class="jb">{</span>
+  <span class="jk">"PersonID"</span>: <span class="jv-num">101</span>,
+  <span class="jk">"LastName"</span>: <span class="jv-str">"Smith"</span>,
+  <span class="jk">"FirstName"</span>: <span class="jv-str">"Fred"</span>,
+  <span class="jk">"Phone"</span>: <span class="jv-str">"555-4321"</span>
+<span class="jb">}</span>`,
+      note: '✦ Only 4 attributes. No Address, no FavoriteColor. That is perfectly valid.'
+    },
+    {
+      json: `<span class="jb">{</span>
+  <span class="jk">"PersonID"</span>: <span class="jv-num">102</span>,
+  <span class="jk">"LastName"</span>: <span class="jv-str">"Jones"</span>,
+  <span class="jk">"FirstName"</span>: <span class="jv-str">"Mary"</span>,
+  <span class="jk">"Address"</span>: <span class="jb">{</span>
+    <span class="jk">"Street"</span>: <span class="jv-str">"123 Main"</span>,
+    <span class="jk">"City"</span>: <span class="jv-str">"Anytown"</span>,
+    <span class="jk">"State"</span>: <span class="jv-str">"OH"</span>,
+    <span class="jk">"ZIPCode"</span>: <span class="jv-num">12345</span>
+  <span class="jb">}</span>
+<span class="jb">}</span>`,
+      note: '✦ Address is a nested Map attribute — DynamoDB supports nesting up to 32 levels deep.'
+    },
+    {
+      json: `<span class="jb">{</span>
+  <span class="jk">"PersonID"</span>: <span class="jv-num">103</span>,
+  <span class="jk">"LastName"</span>: <span class="jv-str">"Stephens"</span>,
+  <span class="jk">"FirstName"</span>: <span class="jv-str">"Howard"</span>,
+  <span class="jk">"Address"</span>: <span class="jb">{</span>
+    <span class="jk">"Street"</span>: <span class="jv-str">"123 Main"</span>,
+    <span class="jk">"City"</span>: <span class="jv-str">"London"</span>,
+    <span class="jk">"PostalCode"</span>: <span class="jv-str">"ER3 5K8"</span>
+  <span class="jb">}</span>,
+  <span class="jk">"FavoriteColor"</span>: <span class="jv-str">"Blue"</span>
+<span class="jb">}</span>`,
+      note: '✦ FavoriteColor only exists on this item — and Address uses PostalCode instead of ZIPCode. Fully valid.'
+    }
+  ];
+
+  function showPerson(i, btn) {
+    document.getElementById('person-display').innerHTML = people[i].json;
+    document.getElementById('person-note').textContent = people[i].note;
+    document.querySelectorAll('.item-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  showPerson(0, document.querySelector('.item-tab'));
+
+  function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+    document.getElementById('section-' + id).classList.add('active');
+    document.querySelector(`[onclick="showSection('${id}')"]`).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function selectPK(type) {
+    document.getElementById('pk-simple').classList.remove('selected');
+    document.getElementById('pk-composite').classList.remove('selected');
+    document.getElementById('pk-detail-simple').style.display = 'none';
+    document.getElementById('pk-detail-composite').style.display = 'none';
+    document.getElementById('pk-' + type).classList.add('selected');
+    document.getElementById('pk-detail-' + type).style.display = 'block';
+  }
+
+  function toggleEvent(el) {
+    el.classList.toggle('open');
+  }
+
+  function showConsistency(type) {
+    ['lsi','gsi','stream'].forEach(t => {
+      document.getElementById('con-' + t).style.display = t === type ? 'block' : 'none';
+      const btn = document.getElementById('con-btn-' + t);
+      if (btn) btn.classList.toggle('active', t === type);
+    });
+  }
+
+  function showRepMode(mode) {
+    ['eventual','strong'].forEach(m => {
+      document.getElementById('rep-' + m).style.display = m === mode ? 'block' : 'none';
+      const btn = document.getElementById('rep-btn-' + m);
+      if (btn) btn.classList.toggle('active', m === mode);
+    });
+  }
+</script>
+</body>
+</html>
