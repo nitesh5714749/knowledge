@@ -644,6 +644,7 @@
     <div class="nav-item" onclick="scrollToSection('dlq')"><div class="dot"></div>Dead Letter Queue</div>
     <div class="nav-item" onclick="scrollToSection('flowcontrol')"><div class="dot"></div>Flow Control</div>
     <div class="nav-item" onclick="scrollToSection('comparison')"><div class="dot"></div>Comparison</div>
+    <div class="nav-item" onclick="scrollToSection('retry')"><div class="dot"></div>Retry & Window Behavior</div>
     <div class="nav-item" onclick="scrollToSection('roadmap')"><div class="dot"></div>Next Steps</div>
   </div>
 </nav>
@@ -1173,10 +1174,151 @@
     </table>
   </div>
 
+  <!-- RETRY & WINDOW BEHAVIOR -->
+  <div class="section" id="retry">
+    <div class="section-header">
+      <div class="section-num">09 /</div>
+      <div>
+        <h2>Retry &amp; <span class="hl">Window Behavior</span></h2>
+        <p class="section-desc">What actually happens when one message in the middle of a batch gets stuck — and how the tracker window fills up over time.</p>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>💡 Key Insight: Retries don't block processing — they only block the Kafka commit cursor.</strong>
+      Other messages continue being fetched, processed, and acknowledged normally while a retry is in progress. The only thing that stalls is the commit advancing past the stuck offset.
+    </div>
+
+    <div style="margin-top:8px;">
+      <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:16px;">3 Phases of Retry Behavior</h3>
+      <div class="card-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="card" style="border-left:none;border-top:3px solid var(--accent);">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:1px;margin-bottom:10px;">PHASE 1</div>
+          <h3>Retry In Progress</h3>
+          <p>Commit cursor stuck at retrying offset. Everything else flows normally — new messages fetched, processed, acked. <strong style="color:var(--accent)">Zero impact on throughput.</strong></p>
+        </div>
+        <div class="card" style="border-left:none;border-top:3px solid var(--warn);">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--warn);letter-spacing:1px;margin-bottom:10px;">PHASE 2</div>
+          <h3>Window Fills Up</h3>
+          <p>Tracker has a fixed size. Once all slots are occupied by acked-but-uncommitted messages, Consumer Proxy <strong style="color:var(--warn)">pauses fetching.</strong> Already-fetched msgs keep processing.</p>
+        </div>
+        <div class="card" style="border-left:none;border-top:3px solid var(--accent3);">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent3);letter-spacing:1px;margin-bottom:10px;">PHASE 3</div>
+          <h3>Timeout → DLQ → Drain</h3>
+          <p>Processing timeout fires. Message DLQ'd (neg-acked). Entire backlog <strong style="color:var(--accent3)">commits to Kafka in one shot.</strong> Fetching resumes.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- INTERACTIVE SIMULATOR -->
+    <div class="commit-tracker" style="margin-top:36px;">
+      <div class="tracker-header">
+        <div class="tracker-title">🔁 Retry &amp; Window Fill Simulator</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn secondary" onclick="resetRetry()">RESET</button>
+          <button class="btn" onclick="stepRetry()">NEXT STEP →</button>
+        </div>
+      </div>
+
+      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;">
+        Watch MSG-1 (stuck retrying) cause the tracker window to fill, pause fetching, until timeout fires and everything drains at once.
+      </div>
+
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+        <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);">WINDOW SIZE:</div>
+        <div style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">6 slots</div>
+        <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-left:24px;">FILLED:</div>
+        <div style="flex:1;min-width:120px;max-width:240px;height:10px;background:var(--surface2);border-radius:5px;border:1px solid var(--border);overflow:hidden;">
+          <div id="windowFillInner" style="height:100%;width:0%;background:var(--accent);transition:width 0.5s;border-radius:5px;"></div>
+        </div>
+        <div id="windowFillPct" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);">0 / 6</div>
+      </div>
+
+      <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:8px;">TRACKER WINDOW (offsets 0 – 5):</div>
+      <div class="messages-grid" id="retryGrid"></div>
+
+      <div style="margin-top:12px;font-family:'Space Mono',monospace;font-size:12px;display:flex;gap:32px;flex-wrap:wrap;">
+        <div><span style="color:var(--muted)">Kafka commit: </span><span id="retryCommit" style="color:var(--accent);font-weight:700;">—</span></div>
+        <div><span style="color:var(--muted)">Fetch status: </span><span id="fetchStatus" style="font-weight:700;color:var(--accent);">ACTIVE</span></div>
+        <div><span style="color:var(--muted)">Retry count for MSG-1: </span><span id="retryCount" style="color:var(--warn);font-weight:700;">0</span></div>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <div id="pill1" style="font-family:'Space Mono',monospace;font-size:10px;padding:5px 14px;border-radius:100px;border:1px solid var(--border);color:var(--muted);letter-spacing:1px;transition:all 0.3s;">PHASE 1: RETRY IN PROGRESS</div>
+        <div id="pill2" style="font-family:'Space Mono',monospace;font-size:10px;padding:5px 14px;border-radius:100px;border:1px solid var(--border);color:var(--muted);letter-spacing:1px;transition:all 0.3s;">PHASE 2: WINDOW FULL</div>
+        <div id="pill3" style="font-family:'Space Mono',monospace;font-size:10px;padding:5px 14px;border-radius:100px;border:1px solid var(--border);color:var(--muted);letter-spacing:1px;transition:all 0.3s;">PHASE 3: DLQ + DRAIN</div>
+      </div>
+
+      <div class="tracker-legend" style="margin-top:16px;">
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(120,120,160,0.3);border:1px solid var(--border);"></div>Pending</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(255,204,2,0.4);"></div>Retrying (stuck)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,160,0.3);"></div>Acked — waiting to commit</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,160,0.6);"></div>Committed to Kafka</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(255,107,53,0.4);"></div>DLQ (timeout fired)</div>
+      </div>
+
+      <div class="tracker-log" id="retryLog">
+        <div class="log-line"><span class="ts">[SYS]</span> Simulator ready. Window size = 6. MSG-1 will get stuck and retry.</div>
+      </div>
+    </div>
+
+    <!-- STATE TABLE -->
+    <div style="margin-top:36px;">
+      <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:16px;">What Each Phase Means</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th style="color:var(--accent)">Phase 1: Retry</th>
+            <th style="color:var(--warn)">Phase 2: Window Full</th>
+            <th style="color:var(--accent3)">Phase 3: DLQ + Drain</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Fetching new messages</strong></td>
+            <td><span class="check">✓</span> Continues normally</td>
+            <td><span class="cross">✗</span> Paused — tracker full</td>
+            <td><span class="check">✓</span> Resumes after drain</td>
+          </tr>
+          <tr>
+            <td><strong>Processing in-flight msgs</strong></td>
+            <td><span class="check">✓</span> Fully parallel</td>
+            <td><span class="check">✓</span> Already-fetched continue</td>
+            <td><span class="check">✓</span> Normal</td>
+          </tr>
+          <tr>
+            <td><strong>Kafka commit cursor</strong></td>
+            <td><span class="cross">✗</span> Stuck at retrying offset</td>
+            <td><span class="cross">✗</span> Still stuck</td>
+            <td><span class="check">✓</span> Advances past entire backlog</td>
+          </tr>
+          <tr>
+            <td><strong>Consumer service impact</strong></td>
+            <td>Retry pushed to another instance</td>
+            <td>No new pushes for stuck msg</td>
+            <td>Stuck msg written to DLQ topic</td>
+          </tr>
+          <tr>
+            <td><strong>Good messages affected?</strong></td>
+            <td><span class="check">✓</span> Not at all</td>
+            <td><span class="partial">~</span> No new fetches, existing fine</td>
+            <td><span class="check">✓</span> All committed in bulk</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box warn" style="margin-top:28px;">
+      <strong>⚡ Special Case: Full Service Outage → Circuit Breaker Fires Instead</strong>
+      If the <em>entire</em> consumer service fleet goes down (not just one message failing), Consumer Proxy detects it via the circuit breaker and pauses all pushing — rather than routing everything to DLQ. This is critical: you don't want 10,000 good messages flooding the DLQ because the service had a 30-second restart. The circuit breaker holds them safely in-flight and pushing resumes when the service recovers.
+    </div>
+  </div>
+
   <!-- ROADMAP -->
   <div class="section" id="roadmap">
     <div class="section-header">
-      <div class="section-num">09 /</div>
+      <div class="section-num">10 /</div>
       <div>
         <h2>Next <span class="hl">Steps</span></h2>
         <p class="section-desc">Planned improvements to make Consumer Proxy even more self-managing and infrastructure-flexible.</p>
@@ -1411,6 +1553,148 @@ function renderLog() {
 }
 
 initSimulator();
+
+// === RETRY WINDOW SIMULATOR ===
+const WINDOW_SIZE = 6;
+let retryStates = [];
+let retryStep = 0;
+let retryLogLines = [];
+let retryCountVal = 0;
+let currentPhase = 0;
+
+const retryGuidedSteps = [
+  { msg: 'Consumer Proxy fetches offsets 0-3 and fans them out in parallel to 4 service instances.', action: 'fetch', ids: [0,1,2,3] },
+  { msg: 'MSG-0, MSG-2, MSG-3 ack quickly. MSG-1 gets no response — retry #1 dispatched to another instance. Offset 0 commits (contiguous from start).', action: 'ack-others', stuck: 1, acked: [0,2,3], retry: 1, phase: 1 },
+  { msg: 'Proxy still has window space — fetches offsets 4 and 5. MSG-1 retried again (#2). MSG-4 and MSG-5 ack normally. Commit still stuck at offset 1.', action: 'fetch-more', ids: [4,5], acked: [4,5], retry: 2, phase: 1 },
+  { msg: 'Window is FULL: all 6 slots occupied (0=committed, 1=retrying, 2-5=acked-waiting). Proxy PAUSES fetching. No new messages will be pushed until the window drains.', action: 'window-full', phase: 2 },
+  { msg: 'Processing timeout fires on MSG-1 after max retries exhausted. Proxy sends it to the DLQ Kafka topic — negative-acknowledged in tracker.', action: 'dlq', id: 1, phase: 3 },
+  { msg: 'Neg-ack on offset 1 completes the contiguous range 0-5. Proxy commits offset 5 to Kafka in one bulk shot. Fetching immediately resumes.', action: 'drain', phase: 3 },
+];
+
+function initRetryState() {
+  retryStates = Array.from({ length: WINDOW_SIZE }, (_, i) => ({ id: i, state: 'pending' }));
+  retryStep = 0;
+  retryCountVal = 0;
+  currentPhase = 0;
+  retryLogLines = ['<span class=\"ts\">[SYS]</span> Simulator ready. Window size = 6. MSG-1 will get stuck retrying.'];
+  renderRetryGrid();
+  updateRetryStats();
+  renderRetryLog();
+  updatePills(0);
+}
+
+function renderRetryGrid() {
+  const grid = document.getElementById('retryGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  const icons = { pending: '⬜', retrying: '🔁', acked: '✓', committed: '💾', dlq: '📬' };
+  const labels = { pending: 'PENDING', retrying: 'RETRY', acked: 'ACKED', committed: 'COMMIT', dlq: 'DLQ' };
+  retryStates.forEach(m => {
+    const div = document.createElement('div');
+    const cls = m.state === 'retrying' ? 'msg-processing' : 'msg-' + m.state;
+    div.className = 'msg-block ' + cls;
+    div.innerHTML = '<span>' + (icons[m.state]||'?') + '</span><span style="font-size:10px">MSG-' + m.id + '</span><span class="offset">' + (labels[m.state]||'') + '</span>';
+    grid.appendChild(div);
+  });
+}
+
+function updateRetryStats() {
+  const committed = retryStates.filter(m => m.state === 'committed').map(m => m.id);
+  const maxCommit = committed.length ? Math.max(...committed) : null;
+  const el = document.getElementById('retryCommit');
+  if (el) el.textContent = maxCommit !== null ? maxCommit : '—';
+
+  const active = retryStates.filter(m => m.state !== 'pending' && m.state !== 'committed').length;
+  const pct = (active / WINDOW_SIZE) * 100;
+  const inner = document.getElementById('windowFillInner');
+  const pctEl = document.getElementById('windowFillPct');
+  if (inner) {
+    inner.style.width = pct + '%';
+    inner.style.background = pct >= 100 ? 'var(--accent3)' : pct > 60 ? 'var(--warn)' : 'var(--accent)';
+  }
+  if (pctEl) pctEl.textContent = active + ' / ' + WINDOW_SIZE;
+
+  const rcEl = document.getElementById('retryCount');
+  if (rcEl) rcEl.textContent = retryCountVal;
+}
+
+function updatePills(phase) {
+  [['pill1',1,'var(--accent)'],['pill2',2,'var(--warn)'],['pill3',3,'var(--accent3)']].forEach(function(p) {
+    const el = document.getElementById(p[0]);
+    if (!el) return;
+    if (phase === p[1]) {
+      el.style.background = p[2]; el.style.color = '#000'; el.style.borderColor = p[2];
+    } else {
+      el.style.background = 'transparent'; el.style.color = 'var(--muted)'; el.style.borderColor = 'var(--border)';
+    }
+  });
+  const fetchEl = document.getElementById('fetchStatus');
+  if (fetchEl) {
+    if (phase === 2) { fetchEl.textContent = 'PAUSED ⛔'; fetchEl.style.color = 'var(--accent3)'; }
+    else if (phase === 3) { fetchEl.textContent = 'RESUMED ✓'; fetchEl.style.color = 'var(--accent)'; }
+    else { fetchEl.textContent = 'ACTIVE ✓'; fetchEl.style.color = 'var(--accent)'; }
+  }
+}
+
+function addRetryLog(msg, type) {
+  const ts = new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  retryLogLines.push('<span class="ts">[' + ts + ']</span><span class="' + (type||'') + '">' + msg + '</span>');
+  if (retryLogLines.length > 25) retryLogLines.shift();
+}
+
+function renderRetryLog() {
+  const log = document.getElementById('retryLog');
+  if (!log) return;
+  log.innerHTML = retryLogLines.map(function(l){ return '<div class="log-line">' + l + '</div>'; }).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function stepRetry() {
+  if (retryStep >= retryGuidedSteps.length) {
+    addRetryLog('[SYS] Simulation complete! Click RESET to replay.', 'warn');
+    renderRetryLog();
+    return;
+  }
+  const step = retryGuidedSteps[retryStep++];
+  addRetryLog('[STEP ' + retryStep + '] ' + step.msg, 'ok');
+
+  if (step.phase) { currentPhase = step.phase; updatePills(step.phase); }
+
+  if (step.action === 'fetch') {
+    step.ids.forEach(function(id){ retryStates[id].state = 'retrying'; });
+    retryStates[1].state = 'retrying';
+    retryStates[0].state = 'retrying';
+    retryStates[2].state = 'retrying';
+    retryStates[3].state = 'retrying';
+  } else if (step.action === 'ack-others') {
+    step.acked.forEach(function(id){ retryStates[id].state = 'acked'; });
+    retryStates[step.stuck].state = 'retrying';
+    retryCountVal = step.retry;
+    retryStates[0].state = 'committed';
+    addRetryLog('[KAFKA COMMIT] Offset 0 committed — only contiguous resolved offset from last commit.', 'ok');
+  } else if (step.action === 'fetch-more') {
+    step.ids.forEach(function(id){ retryStates[id].state = 'acked'; });
+    retryCountVal = step.retry;
+    addRetryLog('[ACK] MSG-4 and MSG-5 acked. Commit cursor still stuck at offset 1 (retrying).', 'ok');
+  } else if (step.action === 'window-full') {
+    addRetryLog('[WARN] Window FULL (5/6 active + 1 committed). Fetching new messages PAUSED.', 'warn');
+  } else if (step.action === 'dlq') {
+    retryStates[step.id].state = 'dlq';
+    addRetryLog('[DLQ] MSG-' + step.id + ' written to DLQ topic after timeout. Neg-acked in tracker.', 'err');
+  } else if (step.action === 'drain') {
+    retryStates.forEach(function(m){ if (m.state === 'acked' || m.state === 'dlq') m.state = 'committed'; });
+    addRetryLog('[KAFKA COMMIT] Bulk commit: offsets 1-5 all committed to Kafka. Fetching resumed.', 'ok');
+  }
+
+  renderRetryGrid();
+  updateRetryStats();
+  renderRetryLog();
+}
+
+function resetRetry() { initRetryState(); }
+
+initRetryState();
+
 </script>
 </body>
 </html>
