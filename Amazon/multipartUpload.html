@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Multipart File Upload — Visual Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;1,300&family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0B0F14;
+  --surface:#111720;
+  --surface2:#18202C;
+  --border:#1E2A38;
+  --border2:#243040;
+  --text:#E2EAF4;
+  --muted:#6B7F96;
+  --accent:#3B82F6;
+  --accent2:#60A5FA;
+  --green:#22C55E;
+  --green-dim:#166534;
+  --amber:#F59E0B;
+  --amber-dim:#92400E;
+  --red:#EF4444;
+  --red-dim:#7F1D1D;
+  --teal:#14B8A6;
+  --purple:#A78BFA;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Syne',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── NOISE OVERLAY ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:0;opacity:0.4;
+}
+
+/* ── HERO ── */
+.hero{
+  position:relative;z-index:1;
+  padding:80px 40px 60px;
+  max-width:1100px;margin:0 auto;
+  border-bottom:1px solid var(--border);
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent2);
+  border:1px solid #1D3557;
+  background:#0D1E30;
+  padding:6px 14px;border-radius:100px;
+  margin-bottom:28px;
+}
+.hero-badge span{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+h1{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(36px,5vw,72px);
+  font-weight:800;
+  line-height:1.0;
+  letter-spacing:-.02em;
+  margin-bottom:20px;
+}
+h1 .ital{font-family:'Instrument Serif',serif;font-style:italic;font-weight:400;color:var(--accent2)}
+.hero-sub{
+  font-size:16px;font-weight:400;
+  color:var(--muted);line-height:1.7;
+  max-width:560px;margin-bottom:40px;
+}
+.hero-stats{display:flex;gap:40px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column;gap:4px}
+.stat-val{
+  font-family:'JetBrains Mono',monospace;
+  font-size:26px;font-weight:600;color:var(--accent2)
+}
+.stat-lbl{font-size:12px;color:var(--muted);letter-spacing:.05em}
+
+/* ── LAYOUT ── */
+main{max-width:1100px;margin:0 auto;padding:0 40px 100px;position:relative;z-index:1}
+
+/* ── SECTION HEADERS ── */
+.section{margin-top:72px}
+.section-label{
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:16px;
+  display:flex;align-items:center;gap:10px;
+}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+h2{
+  font-size:clamp(22px,3vw,34px);font-weight:700;
+  letter-spacing:-.01em;margin-bottom:8px;
+}
+.section-desc{font-size:15px;color:var(--muted);line-height:1.7;max-width:620px;margin-bottom:32px}
+
+/* ── CARDS ── */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:28px;
+}
+.card+.card{margin-top:12px}
+
+/* ── STEP FLOW (3-step process) ── */
+.steps-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:700px){.steps-grid{grid-template-columns:1fr}}
+.step-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:28px 24px;
+  position:relative;overflow:hidden;
+  transition:border-color .25s,transform .25s;
+  cursor:default;
+}
+.step-card:hover{border-color:var(--accent);transform:translateY(-3px)}
+.step-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  border-radius:16px 16px 0 0;
+}
+.step-card.s1::before{background:var(--accent)}
+.step-card.s2::before{background:var(--teal)}
+.step-card.s3::before{background:var(--green)}
+.step-num{
+  font-family:'JetBrains Mono',monospace;
+  font-size:48px;font-weight:600;
+  opacity:.08;position:absolute;top:16px;right:20px;line-height:1;
+}
+.step-icon{
+  width:44px;height:44px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;margin-bottom:20px;
+}
+.s1 .step-icon{background:#0D1E30;color:var(--accent)}
+.s2 .step-icon{background:#0D2420;color:var(--teal)}
+.s3 .step-icon{background:#0B2010;color:var(--green)}
+.step-title{font-size:17px;font-weight:700;margin-bottom:10px}
+.step-body{font-size:13px;color:var(--muted);line-height:1.7}
+.step-code{
+  margin-top:16px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:12px 14px;
+  color:var(--accent2);
+  line-height:1.7;
+}
+
+/* ── ANIMATED UPLOAD VISUALIZER ── */
+.visualizer{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:32px;
+}
+.viz-controls{
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:28px;
+}
+.viz-btn{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  padding:10px 20px;border-radius:8px;border:none;cursor:pointer;
+  transition:all .2s;
+}
+.viz-btn.primary{background:var(--accent);color:#fff;}
+.viz-btn.primary:hover{background:var(--accent2)}
+.viz-btn.secondary{background:var(--surface2);color:var(--muted);border:1px solid var(--border2)}
+.viz-btn.secondary:hover{color:var(--text);border-color:var(--accent)}
+.viz-btn:disabled{opacity:.35;cursor:not-allowed}
+
+select.viz-select{
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  background:var(--surface2);color:var(--text);
+  border:1px solid var(--border2);border-radius:8px;
+  padding:10px 14px;cursor:pointer;
+  letter-spacing:.05em;
+}
+
+/* File bar */
+.file-label{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:8px}
+.file-row{
+  display:flex;gap:4px;height:48px;margin-bottom:24px;
+}
+.chunk{
+  flex:1;border-radius:8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
+  border:1px solid transparent;
+  transition:all .35s cubic-bezier(.4,0,.2,1);
+  position:relative;overflow:hidden;cursor:pointer;
+}
+.chunk::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.04) 0%,transparent 100%);
+}
+.chunk-lbl{font-size:9px;opacity:.7;margin-top:2px}
+/* States */
+.chunk.idle{background:var(--surface2);border-color:var(--border2);color:var(--muted)}
+.chunk.uploading{border-color:var(--accent);color:var(--accent2);animation:uploading .8s infinite alternate}
+.chunk.done{background:#0B2010;border-color:var(--green);color:var(--green)}
+.chunk.failed{background:#200B0B;border-color:var(--red);color:var(--red)}
+.chunk.retrying{border-color:var(--amber);color:var(--amber);animation:uploading .5s infinite alternate}
+@keyframes uploading{from{background:var(--surface2)}to{background:#0D1E30}}
+
+/* Progress */
+.progress-row{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.progress-track{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .4s ease;width:0%}
+.progress-pct{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent2);min-width:36px}
+
+/* Stats row */
+.sim-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.sim-stat{
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px 16px;
+}
+.sim-stat-val{
+  font-family:'JetBrains Mono',monospace;
+  font-size:22px;font-weight:600;color:var(--text);
+}
+.sim-stat-lbl{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* Event log */
+.log-label{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:6px;letter-spacing:.08em;text-transform:uppercase}
+.log-box{
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  height:130px;overflow-y:auto;line-height:1.8;
+  scrollbar-width:thin;scrollbar-color:var(--border2) transparent;
+}
+.log-info{color:var(--accent2)}
+.log-ok{color:var(--green)}
+.log-warn{color:var(--amber)}
+.log-err{color:var(--red)}
+.log-done{color:var(--purple)}
+
+/* ── BENEFITS GRID ── */
+.benefits-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.benefits-grid{grid-template-columns:1fr}}
+.benefit{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:24px;
+  transition:border-color .2s,transform .2s;
+}
+.benefit:hover{border-color:var(--border2);transform:translateY(-2px)}
+.benefit-icon{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;margin-bottom:16px;
+}
+.benefit-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.benefit-text{font-size:13px;color:var(--muted);line-height:1.65}
+
+/* ── COMPARISON TABLE ── */
+.compare-table{width:100%;border-collapse:collapse}
+.compare-table th{
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);text-align:left;
+  padding:10px 16px;border-bottom:1px solid var(--border);
+}
+.compare-table td{
+  padding:14px 16px;font-size:13px;
+  border-bottom:1px solid var(--border);
+  vertical-align:top;line-height:1.6;
+}
+.compare-table tr:last-child td{border-bottom:none}
+.compare-table tr:hover td{background:var(--surface2)}
+.badge{
+  display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 9px;border-radius:5px;
+}
+.badge.yes{background:#0B2010;color:var(--green);border:1px solid var(--green-dim)}
+.badge.no{background:#1A0A0A;color:var(--red);border:1px solid var(--red-dim)}
+.badge.maybe{background:#1C1200;color:var(--amber);border:1px solid var(--amber-dim)}
+
+/* ── AWS S3 SECTION ── */
+.s3-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.s3-grid{grid-template-columns:1fr}}
+.s3-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:22px;
+}
+.s3-card-icon{font-size:22px;margin-bottom:12px}
+.s3-card-title{font-size:14px;font-weight:700;margin-bottom:8px}
+.s3-card-body{font-size:13px;color:var(--muted);line-height:1.65}
+.highlight-box{
+  background:#0D1E30;border:1px solid #1D3557;
+  border-radius:12px;padding:20px 24px;margin-bottom:20px;
+  display:flex;align-items:flex-start;gap:14px;
+}
+.highlight-box-icon{font-size:22px;flex-shrink:0;margin-top:2px}
+.highlight-box-text{font-size:14px;line-height:1.7;color:var(--text)}
+.highlight-box-text strong{color:var(--accent2);font-weight:600}
+
+/* ── FLOW DIAGRAM ── */
+.flow-diagram{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:32px 24px;
+  display:flex;align-items:center;gap:0;flex-wrap:wrap;
+  justify-content:center;
+}
+.flow-node{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  min-width:100px;
+}
+.flow-node-box{
+  background:var(--surface2);border:1px solid var(--border2);
+  border-radius:12px;padding:14px 18px;
+  font-size:12px;font-weight:600;text-align:center;
+  transition:border-color .2s;white-space:nowrap;
+}
+.flow-node:hover .flow-node-box{border-color:var(--accent)}
+.flow-node-sub{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;text-align:center}
+.flow-arrow{
+  font-size:20px;color:var(--border2);margin:0 4px;
+  align-self:center;flex-shrink:0;
+  padding-bottom:20px;
+}
+
+/* ── FOOTER ── */
+footer{
+  border-top:1px solid var(--border);
+  padding:32px 40px;text-align:center;
+  font-size:12px;color:var(--muted);
+  font-family:'JetBrains Mono',monospace;
+  position:relative;z-index:1;
+}
+
+/* ── TOOLTIP ── */
+.tooltip-wrap{position:relative;display:inline-block}
+.tooltip-wrap .tip{
+  visibility:hidden;opacity:0;
+  position:absolute;bottom:120%;left:50%;transform:translateX(-50%);
+  background:var(--surface2);border:1px solid var(--border2);
+  border-radius:8px;padding:8px 12px;font-size:11px;
+  white-space:nowrap;color:var(--text);
+  transition:opacity .2s;z-index:10;pointer-events:none;
+}
+.tooltip-wrap:hover .tip{visibility:visible;opacity:1}
+
+/* ── SCROLL REVEAL ── */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.reveal.visible{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge"><span></span> Interactive Learning Guide</div>
+  <h1>Multipart <br/><span class="ital">File Uploads</span><br/>Explained</h1>
+  <p class="hero-sub">
+    How cloud services like AWS S3 handle massive files — broken down visually with a live simulator, step-by-step flow, and real-world trade-off analysis.
+  </p>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-val">3</div><div class="stat-lbl">Core phases</div></div>
+    <div class="stat"><div class="stat-val">100MB+</div><div class="stat-lbl">S3 threshold</div></div>
+    <div class="stat"><div class="stat-val">∞</div><div class="stat-lbl">Retry resilience</div></div>
+    <div class="stat"><div class="stat-val">N×</div><div class="stat-lbl">Parallel speedup</div></div>
+  </div>
+</section>
+
+<main>
+
+  <!-- WHAT IS IT -->
+  <section class="section reveal">
+    <div class="section-label">Concept</div>
+    <h2>The core idea</h2>
+    <p class="section-desc">
+      Instead of sending a huge file in one big HTTP request (which can time out, fail, or be slow), multipart upload splits the file into independent chunks, uploads them in parallel, then asks the server to stitch them back together.
+    </p>
+    <div class="highlight-box">
+      <div class="highlight-box-icon">💡</div>
+      <div class="highlight-box-text">
+        This is a classic computer science pattern — <strong>divide and conquer</strong>. Break a large problem into smaller, independently solvable sub-problems. Uploading a 2 GB file as 20 × 100 MB chunks lets you exploit parallelism and retry only what fails.
+      </div>
+    </div>
+
+    <div class="flow-diagram">
+      <div class="flow-node">
+        <div class="flow-node-box">📁 Large File<br/><small style="color:var(--muted);font-weight:400">e.g. 2 GB video</small></div>
+        <div class="flow-node-sub">source</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box">✂️ Split into parts<br/><small style="color:var(--muted);font-weight:400">e.g. 20 × 100 MB</small></div>
+        <div class="flow-node-sub">client-side</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box">🚀 Upload in parallel<br/><small style="color:var(--muted);font-weight:400">any order, any thread</small></div>
+        <div class="flow-node-sub">concurrent</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box">🔧 Server assembles<br/><small style="color:var(--muted);font-weight:400">ordered by part #</small></div>
+        <div class="flow-node-sub">server-side</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box">✅ Final object<br/><small style="color:var(--muted);font-weight:400">ready to access</small></div>
+        <div class="flow-node-sub">complete</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3-STEP PROCESS -->
+  <section class="section reveal">
+    <div class="section-label">Process</div>
+    <h2>The 3-step process</h2>
+    <p class="section-desc">Every multipart upload — whether AWS S3, GCS, or custom — follows this exact three-phase lifecycle.</p>
+    <div class="steps-grid">
+
+      <div class="step-card s1">
+        <div class="step-num">1</div>
+        <div class="step-icon">🔑</div>
+        <div class="step-title">Initiation</div>
+        <div class="step-body">
+          The client tells the server: <em>"I'm about to upload a large file."</em> The server replies with a unique <strong>Upload ID</strong> — a token that links all future chunk requests together. Think of it as opening a tab at a restaurant.
+        </div>
+        <div class="step-code">POST /uploads<br/>← { uploadId: "abc-123" }</div>
+      </div>
+
+      <div class="step-card s2">
+        <div class="step-num">2</div>
+        <div class="step-icon">📤</div>
+        <div class="step-title">Chunk uploads</div>
+        <div class="step-body">
+          The client splits the file and uploads each part independently — possibly on multiple threads at once. Each request carries the <strong>Upload ID</strong>, a <strong>part number</strong>, the chunk data, and a <strong>checksum</strong>. Parts can arrive out of order. If one fails, only that part is retried.
+        </div>
+        <div class="step-code">PUT /uploads/abc-123/parts/3<br/>← { ETag: "xyz789", checksum: "..." }</div>
+      </div>
+
+      <div class="step-card s3">
+        <div class="step-num">3</div>
+        <div class="step-icon">🔧</div>
+        <div class="step-title">Completion</div>
+        <div class="step-body">
+          Once all parts are confirmed, the client sends a <strong>complete</strong> request listing all part numbers and their ETags. The server assembles them in order, verifies the final checksum, and the object is available for access — just like any normally uploaded file.
+        </div>
+        <div class="step-code">POST /uploads/abc-123/complete<br/>{ parts: [1,2,...,N], etags: [...] }</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- LIVE SIMULATOR -->
+  <section class="section reveal">
+    <div class="section-label">Simulator</div>
+    <h2>Step-by-step simulator</h2>
+    <p class="section-desc">Press <strong style="color:var(--accent2)">Next Step</strong> to walk through each phase of a multipart upload one action at a time. Watch each part change state as it moves through initiation, uploading, failure, retry, and assembly.</p>
+
+    <div class="visualizer">
+
+      <!-- Step indicator -->
+      <div id="step-indicator" style="display:flex;align-items:center;gap:10px;margin-bottom:22px;flex-wrap:wrap;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);">Phase</div>
+        <div id="step-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Current step card -->
+      <div id="step-card" style="
+        background:var(--bg);border:1px solid var(--accent);border-radius:12px;
+        padding:16px 20px;margin-bottom:20px;
+        display:flex;align-items:flex-start;gap:14px;
+        min-height:68px;transition:border-color .3s;
+      ">
+        <div id="step-card-icon" style="font-size:22px;flex-shrink:0;margin-top:2px;">🔵</div>
+        <div>
+          <div id="step-card-title" style="font-size:13px;font-weight:700;margin-bottom:4px;color:var(--accent2);">Ready</div>
+          <div id="step-card-desc" style="font-size:12px;color:var(--muted);line-height:1.6;">Choose your settings below and press <strong style="color:var(--text)">Next Step</strong> to begin.</div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="viz-controls" style="margin-bottom:20px;">
+        <select class="viz-select" id="sel-size">
+          <option value="5">File: 5 MB (tiny)</option>
+          <option value="100">File: 100 MB</option>
+          <option value="500" selected>File: 500 MB</option>
+          <option value="2000">File: 2 GB (large)</option>
+        </select>
+        <select class="viz-select" id="sel-workers">
+          <option value="1">1 worker (sequential)</option>
+          <option value="3" selected>3 workers (parallel)</option>
+          <option value="5">5 workers (max parallel)</option>
+        </select>
+        <select class="viz-select" id="sel-fail">
+          <option value="0">No failures</option>
+          <option value="2">Part 2 fails once</option>
+          <option value="4">Part 4 fails once</option>
+        </select>
+        <button class="viz-btn primary" id="btn-next" onclick="nextStep()">Next Step →</button>
+        <button class="viz-btn secondary" id="btn-reset" onclick="resetSim()">↺ Reset</button>
+      </div>
+
+      <div class="file-label" id="file-label">Configure settings above, then press Next Step</div>
+      <div class="file-row" id="chunk-row"></div>
+
+      <div class="progress-row">
+        <div class="progress-track"><div class="progress-fill" id="prog-fill"></div></div>
+        <div class="progress-pct" id="prog-pct">0%</div>
+      </div>
+
+      <div class="sim-stats">
+        <div class="sim-stat">
+          <div class="sim-stat-val" id="s-phase">—</div>
+          <div class="sim-stat-lbl">Current phase</div>
+        </div>
+        <div class="sim-stat">
+          <div class="sim-stat-val" id="s-retries">0</div>
+          <div class="sim-stat-lbl">Retries</div>
+        </div>
+        <div class="sim-stat">
+          <div class="sim-stat-val" id="s-status">Idle</div>
+          <div class="sim-stat-lbl">Status</div>
+        </div>
+      </div>
+
+      <div class="log-label">Event log</div>
+      <div class="log-box" id="log-box">Press "Next Step" to begin…</div>
+    </div>
+  </section>
+
+  <!-- BENEFITS -->
+  <section class="section reveal">
+    <div class="section-label">Benefits</div>
+    <h2>Why it works so well</h2>
+    <p class="section-desc">Four properties that make multipart uploads the right choice for large files.</p>
+    <div class="benefits-grid">
+      <div class="benefit">
+        <div class="benefit-icon" style="background:#0D1E30;color:var(--accent)">⚡</div>
+        <div class="benefit-title">High throughput</div>
+        <div class="benefit-text">By uploading N parts in parallel, you fully saturate your available bandwidth instead of being limited by a single TCP stream. A 5-worker upload can be ~5× faster than sequential.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon" style="background:#0D2420;color:var(--teal)">🔄</div>
+        <div class="benefit-title">Fault tolerance</div>
+        <div class="benefit-text">If part 7 of 20 fails, only part 7 is retried. You don't restart from byte 0. On spotty networks (mobile, satellite), this is a massive practical win.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon" style="background:#1C1200;color:var(--amber)">🛡️</div>
+        <div class="benefit-title">Data integrity</div>
+        <div class="benefit-text">Each part ships with a checksum (MD5 or SHA-256). The server verifies every single part before assembly. If bytes got corrupted in transit, the mismatch is caught immediately.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon" style="background:#0B2010;color:var(--green)">⏸️</div>
+        <div class="benefit-title">Pause & resume</div>
+        <div class="benefit-text">Since parts are independent, you can stop an upload and resume it hours later. The server keeps confirmed parts indefinitely until you complete or abort the upload.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHEN TO USE -->
+  <section class="section reveal">
+    <div class="section-label">Trade-offs</div>
+    <h2>Multipart vs. single upload</h2>
+    <p class="section-desc">Multipart isn't always the right answer. Here's a direct comparison.</p>
+
+    <div class="card">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Single upload</th>
+            <th>Multipart upload</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>File &lt; 10 MB</strong><br/><span style="color:var(--muted);font-size:12px">Small images, config files</span></td>
+            <td><span class="badge yes">Recommended</span><br/><span style="font-size:12px;color:var(--muted)">Overhead not worth it</span></td>
+            <td><span class="badge maybe">Overkill</span><br/><span style="font-size:12px;color:var(--muted)">Adds latency, not speed</span></td>
+          </tr>
+          <tr>
+            <td><strong>File 10 MB – 100 MB</strong><br/><span style="color:var(--muted);font-size:12px">Documents, medium videos</span></td>
+            <td><span class="badge yes">Usually fine</span></td>
+            <td><span class="badge maybe">Optional benefit</span></td>
+          </tr>
+          <tr>
+            <td><strong>File &gt; 100 MB</strong><br/><span style="color:var(--muted);font-size:12px">Large videos, backups, ML datasets</span></td>
+            <td><span class="badge no">Risky</span><br/><span style="font-size:12px;color:var(--muted)">Single timeout = full retry</span></td>
+            <td><span class="badge yes">Strongly recommended</span></td>
+          </tr>
+          <tr>
+            <td><strong>Unreliable network</strong><br/><span style="color:var(--muted);font-size:12px">Mobile, rural, satellite</span></td>
+            <td><span class="badge no">Painful</span></td>
+            <td><span class="badge yes">Excellent fit</span></td>
+          </tr>
+          <tr>
+            <td><strong>Unknown final file size</strong><br/><span style="color:var(--muted);font-size:12px">Live transcoding, log streaming</span></td>
+            <td><span class="badge no">Not possible</span></td>
+            <td><span class="badge yes">Supported</span></td>
+          </tr>
+          <tr>
+            <td><strong>Pause &amp; resume needed</strong></td>
+            <td><span class="badge no">Not supported</span></td>
+            <td><span class="badge yes">Built-in</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:16px;padding:18px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:13px;color:var(--muted);line-height:1.7">
+      <strong style="color:var(--amber)">⚠️ Why small files don't benefit:</strong> For a 5 MB file on a decent connection, transfer takes ~400ms. The multipart initiation handshake alone costs ~50–100ms, and each chunk adds its own round-trip. The overhead can easily double the total time.
+    </div>
+  </section>
+
+  <!-- AWS S3 -->
+  <section class="section reveal">
+    <div class="section-label">AWS S3</div>
+    <h2>S3-specific details</h2>
+    <p class="section-desc">Amazon S3's multipart upload has a few important rules you need to know in practice.</p>
+
+    <div class="highlight-box" style="margin-bottom:16px">
+      <div class="highlight-box-icon">🏷️</div>
+      <div class="highlight-box-text">
+        <strong>Best practice threshold: 100 MB.</strong> AWS recommends using multipart upload for objects <strong>100 MB or larger</strong>. Below that, a single PUT request is simpler and fast enough.
+      </div>
+    </div>
+
+    <div class="s3-grid">
+      <div class="s3-card">
+        <div class="s3-card-icon">⏳</div>
+        <div class="s3-card-title">No auto-expiry on incomplete uploads</div>
+        <div class="s3-card-body">Once initiated, an S3 multipart upload has <strong>no expiry</strong>. You must explicitly complete or abort it — or you'll pay for the stored parts forever. Use an S3 Lifecycle rule to auto-abort stale uploads after N days.</div>
+      </div>
+      <div class="s3-card">
+        <div class="s3-card-icon">🔐</div>
+        <div class="s3-card-title">Automatic checksums</div>
+        <div class="s3-card-body">Updated AWS clients automatically calculate and send a checksum for every part. S3 verifies each part on arrival, catching any in-transit corruption before assembly begins.</div>
+      </div>
+      <div class="s3-card">
+        <div class="s3-card-icon">🔀</div>
+        <div class="s3-card-title">Any order, any time</div>
+        <div class="s3-card-body">Parts can be uploaded in any order. Part 7 can arrive before part 1. S3 tracks which parts have landed and only assembles when you send the complete request with the final ordered list.</div>
+      </div>
+      <div class="s3-card">
+        <div class="s3-card-icon">🏗️</div>
+        <div class="s3-card-title">Upload before knowing final size</div>
+        <div class="s3-card-body">You can begin uploading parts while still generating the object — perfect for live video transcoding or log aggregation where the final size isn't known until the stream ends.</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Built as an interactive learning guide · Multipart Upload Deep Dive
+</footer>
+
+<script>
+// ─────────────────────────────────────────────
+//  STEP-BY-STEP SIMULATOR
+// ─────────────────────────────────────────────
+const CHUNK_COLORS = [
+  {bg:'#0D1E30',border:'#1D3557',text:'#60A5FA'},
+  {bg:'#0D2420',border:'#1A4040',text:'#2DD4BF'},
+  {bg:'#1C1200',border:'#3D2800',text:'#FCD34D'},
+  {bg:'#200B0B',border:'#4A1010',text:'#FCA5A5'},
+  {bg:'#1A0A28',border:'#3A1A5A',text:'#C4B5FD'},
+  {bg:'#0B1A10',border:'#1A3A20',text:'#86EFAC'},
+  {bg:'#1A1200',border:'#3A2800',text:'#FDE68A'},
+  {bg:'#120D1A',border:'#2A1A3A',text:'#DDD6FE'},
+];
+
+function getNumParts(mb){ return mb<=5?2:mb<=100?4:mb<=500?6:8; }
+
+// ── State ──
+let steps = [];       // array of step-objects
+let stepIdx = 0;      // which step we're on
+let retries = 0;
+let doneParts = 0;
+let totalParts = 0;
+let started = false;
+
+// ── Build the step sequence ──
+function buildSteps(){
+  const size    = parseInt(document.getElementById('sel-size').value);
+  const workers = parseInt(document.getElementById('sel-workers').value);
+  const failPart= parseInt(document.getElementById('sel-fail').value);
+  const n       = getNumParts(size);
+  const partMB  = Math.round(size/n);
+  const uploadId= 'mpu-'+Math.random().toString(36).slice(2,9);
+  totalParts = n;
+  doneParts  = 0;
+  retries    = 0;
+
+  const s = [];
+
+  // Phase 0 – Initiation
+  s.push({
+    phase:'Initiation', icon:'🔑', phaseName:'phase-init',
+    title:'Step 1 — Client sends initiation request',
+    desc:`The client tells the server it wants to upload a <strong>${size} MB</strong> file. No data is sent yet — just a handshake.`,
+    http:'POST /uploads  →  HTTP 200',
+    log:[`Initiating upload: ${size} MB → ${n} parts of ~${partMB} MB each`,'log-info'],
+    action(){ setPhase('Initiation'); setStatus('Initiating'); }
+  });
+  s.push({
+    phase:'Initiation', icon:'🔑', phaseName:'phase-init',
+    title:'Step 2 — Server returns Upload ID',
+    desc:`Server responds with a unique <strong>Upload ID</strong>: <code style="color:var(--accent2)">"${uploadId}"</code>. Every future chunk request must include this ID. Think of it as a session token.`,
+    http:`← { uploadId: "${uploadId}" }`,
+    log:[`Server issued uploadId: "${uploadId}"`, 'log-ok'],
+    action(){ setStatus('Upload ID received'); }
+  });
+
+  // Phase 1 – Chunk uploads (batched by workers)
+  const queue = [...Array(n)].map((_,i)=>i+1);
+  let batchNum = 0;
+  const failedOnce = {};
+
+  while(queue.length){
+    const batch = queue.splice(0, workers);
+    batchNum++;
+
+    // Show batch starting
+    const batchCopy = [...batch];
+    s.push({
+      phase:'Uploading', icon:'📤', phaseName:'phase-upload',
+      title:`Step ${s.length+1} — Batch ${batchNum}: start uploading ${batchCopy.length} part(s) in parallel`,
+      desc: workers===1
+        ? `Part <strong>P${batchCopy[0]}</strong> begins uploading (~${partMB} MB). Sequential mode — one part at a time.`
+        : `Parts <strong>${batchCopy.map(i=>'P'+i).join(', ')}</strong> start uploading simultaneously (~${partMB} MB each). This is parallelism in action.`,
+      http: batchCopy.map(i=>`PUT /uploads/${uploadId}/parts/${i}`).join('\n'),
+      log:[`→ Batch ${batchNum}: uploading parts ${batchCopy.join(', ')} in parallel`, 'log-info'],
+      action(){
+        setPhase('Uploading');
+        setStatus(`Batch ${batchNum} uploading`);
+        batchCopy.forEach(i=>setChunk(i,'uploading','uploading…'));
+      }
+    });
+
+    // Resolve each part (handle failure)
+    for(const i of batchCopy){
+      const iCopy = i;
+      if(failPart===iCopy && !failedOnce[iCopy]){
+        failedOnce[iCopy]=true;
+
+        // Fail step
+        s.push({
+          phase:'Uploading', icon:'❌', phaseName:'phase-upload',
+          title:`Step ${s.length+1} — Part ${iCopy} fails (network error)`,
+          desc:`<strong style="color:var(--red)">Part ${iCopy} encountered a network error.</strong> The other parts in this batch are unaffected. Only P${iCopy} needs to be retried — we don't restart from zero.`,
+          http:`← HTTP 500  (Part ${iCopy})`,
+          log:[`✗ Part ${iCopy}: network error — will retry`, 'log-err'],
+          action(){
+            retries++;
+            document.getElementById('s-retries').textContent=retries;
+            setChunk(iCopy,'failed','failed!');
+            setStatus(`Part ${iCopy} failed`);
+            setCardBorder('var(--red)');
+          }
+        });
+
+        // Retry step
+        s.push({
+          phase:'Uploading', icon:'🔁', phaseName:'phase-upload',
+          title:`Step ${s.length+1} — Retrying Part ${iCopy} only`,
+          desc:`The client retries <strong>only Part ${iCopy}</strong>. All other already-uploaded parts stay safe on the server. This is the fault-tolerance superpower of multipart upload.`,
+          http:`PUT /uploads/${uploadId}/parts/${iCopy}  (retry)`,
+          log:[`↻ Part ${iCopy}: retrying…`, 'log-warn'],
+          action(){
+            setChunk(iCopy,'retrying','retrying…');
+            setStatus('Retrying P'+iCopy);
+            setCardBorder('var(--amber)');
+          }
+        });
+      }
+
+      // Done step
+      const doneIdx = s.length;
+      s.push({
+        phase:'Uploading', icon:'✅', phaseName:'phase-upload',
+        title:`Step ${s.length+1} — Part ${iCopy} confirmed`,
+        desc:`Server verified the checksum for <strong>Part ${iCopy}</strong> and returned an <strong>ETag</strong>. The client notes this ETag — it will be needed in the final complete request.`,
+        http:`← { ETag: "${Math.random().toString(36).slice(2,10)}", status: 200 }`,
+        log:[`✓ Part ${iCopy}: uploaded & ETag verified`, 'log-ok'],
+        action(){
+          doneParts++;
+          setChunk(iCopy,'done','✓ done');
+          setProgress(Math.min(90, Math.round((doneParts/totalParts)*90)));
+          setStatus(`${doneParts}/${totalParts} parts done`);
+          setCardBorder('var(--green)');
+        }
+      });
+    }
+  }
+
+  // Phase 2 – Completion
+  s.push({
+    phase:'Completing', icon:'📋', phaseName:'phase-complete',
+    title:`Step ${s.length+1} — Client sends Complete request`,
+    desc:`All ${n} parts are uploaded. The client sends a <strong>complete</strong> request listing all part numbers and their ETags in order. The server now knows the full assembly manifest.`,
+    http:`POST /uploads/${uploadId}/complete\n{ parts:[${[...Array(n)].map((_,i)=>i+1)}], etags:[...] }`,
+    log:['All parts confirmed. Sending complete request…','log-info'],
+    action(){ setPhase('Completing'); setProgress(93); setStatus('Assembling…'); setCardBorder('var(--purple)'); }
+  });
+  s.push({
+    phase:'Completing', icon:'🔧', phaseName:'phase-complete',
+    title:`Step ${s.length+1} — Server assembles the object`,
+    desc:`Amazon S3 (or your server) <strong>concatenates all ${n} parts in order</strong> — regardless of what order they arrived in. It verifies the final checksum before making the object available.`,
+    http:`← HTTP 200  { location: "/objects/yourfile", size: "${size}MB" }`,
+    log:[`Server assembling ${n} parts in sequence…`,'log-info'],
+    action(){ setProgress(97); }
+  });
+  s.push({
+    phase:'Done', icon:'🎉', phaseName:'phase-done',
+    title:`Step ${s.length+1} — Upload complete!`,
+    desc:`The object is now fully assembled and <strong style="color:var(--green)">available to access</strong> — just like any normally uploaded file. Total parts: <strong>${n}</strong>, retries: <strong>${retries||0}</strong>.`,
+    http:`← { status: "available", key: "yourfile", parts: ${n} }`,
+    log:['🎉 Upload complete! Object is now accessible.','log-done'],
+    action(){ setProgress(100); setPhase('Done'); setStatus('✓ Complete'); setCardBorder('var(--green)');
+      document.getElementById('btn-next').disabled=true;
+      document.getElementById('btn-next').textContent='✓ Finished';
+    }
+  });
+
+  return s;
+}
+
+// ── Helpers ──
+function setChunk(i, state, label){
+  const el=document.getElementById('ch-'+i);
+  if(!el) return;
+  const c=CHUNK_COLORS[(i-1)%CHUNK_COLORS.length];
+  el.className='chunk '+state;
+  const css={
+    idle:`background:${c.bg};border-color:${c.border};color:${c.text};`,
+    uploading:`background:#0D1E30;border-color:${c.text};color:${c.text};`,
+    done:`background:#0B2010;border-color:#22C55E;color:#22C55E;`,
+    failed:`background:#200B0B;border-color:#EF4444;color:#EF4444;`,
+    retrying:`background:#1C1200;border-color:#F59E0B;color:#F59E0B;`,
+  };
+  el.style.cssText=css[state]||css.idle;
+  el.innerHTML=`<span>P${i}</span><span class="chunk-lbl">${label||state}</span>`;
+}
+
+function setProgress(pct){
+  document.getElementById('prog-fill').style.width=pct+'%';
+  document.getElementById('prog-pct').textContent=pct+'%';
+}
+
+function setPhase(name){
+  document.getElementById('s-phase').textContent=name;
+}
+
+function setStatus(txt){
+  document.getElementById('s-status').textContent=txt;
+}
+
+function setCardBorder(color){
+  document.getElementById('step-card').style.borderColor=color;
+}
+
+function addLog(msg,cls){
+  const box=document.getElementById('log-box');
+  const d=document.createElement('div');
+  d.className=cls||'';
+  const ts=new Date().toLocaleTimeString('en',{hour12:false});
+  d.textContent=`[${ts}] ${msg}`;
+  box.appendChild(d);
+  box.scrollTop=box.scrollHeight;
+}
+
+function clearLog(){ document.getElementById('log-box').innerHTML=''; }
+
+// ── Build pill indicators ──
+function buildPills(stepsArr){
+  const container = document.getElementById('step-pills');
+  container.innerHTML='';
+  const phases = ['Initiation','Uploading','Completing','Done'];
+  phases.forEach(p=>{
+    const pill = document.createElement('div');
+    pill.id='pill-'+p;
+    pill.style.cssText=`
+      font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;
+      text-transform:uppercase;padding:4px 12px;border-radius:100px;
+      border:1px solid var(--border2);color:var(--muted);background:var(--bg);
+      transition:all .3s;
+    `;
+    pill.textContent=p;
+    container.appendChild(pill);
+  });
+}
+
+function activatePill(phase){
+  ['Initiation','Uploading','Completing','Done'].forEach(p=>{
+    const el=document.getElementById('pill-'+p);
+    if(!el) return;
+    if(p===phase){
+      el.style.background='#0D1E30';el.style.color='var(--accent2)';el.style.borderColor='var(--accent)';
+    } else {
+      el.style.background='var(--bg)';el.style.color='var(--muted)';el.style.borderColor='var(--border2)';
+    }
+  });
+}
+
+// ── Build chunk row ──
+function buildChunkRow(){
+  const size = parseInt(document.getElementById('sel-size').value);
+  const n = getNumParts(size);
+  const row = document.getElementById('chunk-row');
+  row.innerHTML='';
+  for(let i=0;i<n;i++){
+    const c=CHUNK_COLORS[i%CHUNK_COLORS.length];
+    const d=document.createElement('div');
+    d.className='chunk idle';
+    d.id='ch-'+(i+1);
+    d.style.cssText=`background:${c.bg};border-color:${c.border};color:${c.text};`;
+    d.innerHTML=`<span>P${i+1}</span><span class="chunk-lbl">idle</span>`;
+    row.appendChild(d);
+  }
+  document.getElementById('file-label').textContent=
+    `${size} MB file  →  ${n} parts of ~${Math.round(size/n)} MB each`;
+}
+
+// ── Show a step in the card ──
+function showStep(step){
+  document.getElementById('step-card-icon').textContent=step.icon;
+  document.getElementById('step-card-title').textContent=step.title;
+  document.getElementById('step-card-desc').innerHTML=step.desc;
+  document.getElementById('step-card').style.borderColor='var(--accent)';
+
+  // HTTP preview below description
+  let httpEl=document.getElementById('step-http');
+  if(!httpEl){
+    httpEl=document.createElement('div');
+    httpEl.id='step-http';
+    httpEl.style.cssText=`margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;
+      background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+      padding:8px 12px;color:var(--accent2);line-height:1.7;white-space:pre-wrap;`;
+    document.getElementById('step-card').appendChild(httpEl);
+  }
+  httpEl.textContent=step.http||'';
+
+  // Pills
+  activatePill(step.phase);
+
+  // Step counter in button
+  const remaining = steps.length - stepIdx;
+  const btn=document.getElementById('btn-next');
+  if(remaining>1) btn.textContent=`Next Step → (${stepIdx+1}/${steps.length})`;
+
+  // Log
+  if(step.log) addLog(step.log[0], step.log[1]);
+
+  // Run the visual action
+  if(step.action) step.action();
+}
+
+// ── Main next step handler ──
+function nextStep(){
+  if(!started){
+    // First press — build everything
+    started=true;
+    clearLog();
+    buildChunkRow();
+    setProgress(0);
+    setPhase('—'); setStatus('Running');
+    document.getElementById('s-retries').textContent='0';
+    steps = buildSteps();
+    buildPills(steps);
+    stepIdx=0;
+  }
+
+  if(stepIdx>=steps.length) return;
+  showStep(steps[stepIdx]);
+  stepIdx++;
+}
+
+// ── Reset ──
+function resetSim(){
+  started=false; steps=[]; stepIdx=0; retries=0; doneParts=0; totalParts=0;
+  clearLog();
+  buildChunkRow();
+  setProgress(0);
+  document.getElementById('s-phase').textContent='—';
+  document.getElementById('s-retries').textContent='0';
+  document.getElementById('s-status').textContent='Idle';
+  document.getElementById('step-card-icon').textContent='🔵';
+  document.getElementById('step-card-title').textContent='Ready';
+  document.getElementById('step-card-desc').innerHTML='Choose your settings above and press <strong style="color:var(--text)">Next Step</strong> to begin.';
+  document.getElementById('step-card').style.borderColor='var(--accent)';
+  const httpEl=document.getElementById('step-http');
+  if(httpEl) httpEl.textContent='';
+  document.getElementById('log-box').textContent='Press "Next Step" to begin…';
+  document.getElementById('btn-next').disabled=false;
+  document.getElementById('btn-next').textContent='Next Step →';
+  document.getElementById('step-pills').innerHTML='';
+}
+
+// ── Rebuild on setting change ──
+['sel-size','sel-workers','sel-fail'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',()=>{ if(!started||stepIdx===0) resetSim(); });
+});
+
+// init
+buildChunkRow();
+
+// ── SCROLL REVEAL ──
+const revealEls=document.querySelectorAll('.reveal');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}});
+},{threshold:0.08});
+revealEls.forEach(el=>obs.observe(el));
+</script>
+</body>
+</html>
