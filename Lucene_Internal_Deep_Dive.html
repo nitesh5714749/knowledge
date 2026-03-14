@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucene Posting Lists & Delta Encoding</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080b12;
+    --surface: #0f1420;
+    --surface2: #161d2e;
+    --surface3: #1d2640;
+    --border: #1e2d4a;
+    --border2: #2a3f66;
+    --blue: #4f9eff;
+    --blue-dim: rgba(79,158,255,0.12);
+    --green: #2dd4a0;
+    --green-dim: rgba(45,212,160,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --red: #f87171;
+    --text: #c8d8f0;
+    --text2: #7a94bb;
+    --text3: #3d5070;
+    --mono: 'JetBrains Mono', monospace;
+    --display: 'Bricolage Grotesque', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--display);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79,158,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,158,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 0 2rem 6rem; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 5rem 0 4rem;
+    text-align: center;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--blue-dim); border: 1px solid rgba(79,158,255,0.25);
+    border-radius: 100px; padding: 5px 16px;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--blue);
+    letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1.5rem;
+    animation: fadeUp 0.6s ease both;
+  }
+  .hero-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+  .hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.04em;
+    margin-bottom: 1rem;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+  .hero h1 em { font-style: normal; color: var(--blue); }
+  .hero p {
+    font-size: 1rem; color: var(--text2); max-width: 540px; margin: 0 auto 2rem;
+    line-height: 1.7; animation: fadeUp 0.6s 0.2s ease both;
+  }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+
+  /* ── NAV ── */
+  .nav-pills {
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    margin-bottom: 3rem;
+    animation: fadeUp 0.6s 0.3s ease both;
+  }
+  .nav-pill {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text2); padding: 8px 18px;
+    border-radius: 8px; font-family: var(--mono); font-size: 0.72rem;
+    cursor: pointer; transition: all 0.2s; text-decoration: none;
+    font-weight: 500; letter-spacing: 0.02em;
+  }
+  .nav-pill:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+  .nav-pill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* ── SECTIONS ── */
+  .section { margin-bottom: 5rem; opacity: 0; transform: translateY(20px); transition: opacity 0.5s, transform 0.5s; }
+  .section.visible { opacity: 1; transform: translateY(0); }
+
+  .section-header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 2rem; }
+  .section-num {
+    font-family: var(--mono); font-size: 0.65rem; color: var(--blue);
+    background: var(--blue-dim); border: 1px solid rgba(79,158,255,0.2);
+    padding: 3px 9px; border-radius: 4px; letter-spacing: 0.08em;
+  }
+  .section-title { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
+  .section-sub { color: var(--text2); font-size: 0.88rem; line-height: 1.6; margin-bottom: 1.5rem; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.75rem;
+    margin-bottom: 1.25rem;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border2); }
+  .card-label {
+    font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text3); margin-bottom: 1rem;
+  }
+
+  /* ── INVERTED INDEX ── */
+  .doc-strip {
+    display: flex; gap: 10px; margin-bottom: 1.5rem; flex-wrap: wrap;
+  }
+  .doc-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; flex: 1; min-width: 140px;
+    transition: all 0.25s; cursor: pointer;
+  }
+  .doc-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .doc-card.lit { border-color: var(--green); background: var(--green-dim); }
+  .doc-num { font-family: var(--mono); font-size: 0.65rem; color: var(--text3); margin-bottom: 4px; }
+  .doc-text { font-size: 0.82rem; color: var(--text); }
+  .doc-text mark { background: none; color: var(--green); font-weight: 600; }
+
+  .index-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.8rem; }
+  .index-table th { text-align: left; color: var(--text3); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500; }
+  .index-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .index-table tr:last-child td { border-bottom: none; }
+  .term-chip {
+    display: inline-block; background: var(--purple-dim); border: 1px solid rgba(167,139,250,0.3);
+    color: var(--purple); padding: 3px 10px; border-radius: 5px; font-size: 0.75rem;
+  }
+  .post-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .post-chip {
+    display: inline-block; padding: 3px 10px; border-radius: 5px; font-size: 0.72rem;
+    border: 1px solid var(--border); color: var(--text2); cursor: pointer; transition: all 0.2s;
+  }
+  .post-chip:hover { border-color: var(--green); color: var(--green); }
+  .post-chip.lit { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  .callout {
+    display: flex; gap: 12px; background: var(--blue-dim);
+    border: 1px solid rgba(79,158,255,0.2); border-radius: 10px;
+    padding: 1rem 1.25rem; margin: 1rem 0;
+    font-size: 0.85rem; line-height: 1.6; color: var(--text2);
+  }
+  .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+  .callout strong { color: var(--text); }
+
+  /* ── DELTA ENCODING ── */
+  .step-row { display: flex; align-items: center; gap: 0; margin: 1rem 0; flex-wrap: wrap; }
+  .num-cell {
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .num-box {
+    width: 60px; height: 50px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 1rem; font-weight: 600;
+    border-top: 1px solid; border-bottom: 1px solid; border-right: 1px solid;
+    transition: all 0.4s;
+  }
+  .num-cell:first-child .num-box { border-left: 1px solid; border-radius: 8px 0 0 8px; }
+  .num-cell:last-child .num-box { border-radius: 0 8px 8px 0; }
+  .num-caption { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); margin-top: 5px; text-align: center; }
+
+  .raw-cell .num-box { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+  .delta-cell .num-box { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .block-a-cell .num-box { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
+  .block-b-cell .num-box { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+
+  .arrow-down {
+    text-align: center; color: var(--text3); font-size: 0.85rem; margin: 0.5rem 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .arrow-down span { font-size: 1.1rem; }
+  .transform-label {
+    font-family: var(--mono); font-size: 0.7rem; color: var(--text3);
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 4px;
+  }
+
+  .formula-block {
+    background: var(--surface2); border-left: 2px solid var(--blue);
+    padding: 1rem 1.25rem; border-radius: 0 10px 10px 0;
+    font-family: var(--mono); font-size: 0.8rem; line-height: 2;
+    margin: 1rem 0;
+  }
+  .formula-block .c { color: var(--text3); }
+  .formula-block .k { color: var(--blue); }
+  .formula-block .v { color: var(--green); }
+  .formula-block .op { color: var(--amber); }
+
+  /* ── BLOCKS ── */
+  .block-wrap { display: flex; gap: 12px; flex-wrap: wrap; margin: 1rem 0; }
+  .block-card {
+    flex: 1; min-width: 200px; background: var(--surface2);
+    border-radius: 10px; overflow: hidden;
+  }
+  .block-header {
+    padding: 8px 14px; font-family: var(--mono); font-size: 0.68rem;
+    font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .block-a .block-header { background: var(--purple-dim); border-bottom: 1px solid rgba(167,139,250,0.2); color: var(--purple); }
+  .block-b .block-header { background: var(--amber-dim); border-bottom: 1px solid rgba(245,158,11,0.2); color: var(--amber); }
+  .block-body { padding: 14px; }
+  .block-vals { display: flex; gap: 8px; margin-bottom: 12px; }
+  .bval {
+    flex: 1; text-align: center; padding: 8px;
+    border-radius: 7px; font-family: var(--mono); font-size: 0.9rem; font-weight: 600;
+  }
+  .block-a .bval { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); }
+  .block-b .bval { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+  .block-stat { font-size: 0.72rem; color: var(--text2); line-height: 1.8; font-family: var(--mono); }
+  .block-stat strong { color: var(--text); }
+
+  /* ── BIT PACKING ── */
+  .bit-row { display: flex; gap: 3px; flex-wrap: wrap; margin: 0.75rem 0; }
+  .bit {
+    width: 26px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 0.7rem; font-weight: 600;
+    border-radius: 5px; transition: all 0.3s;
+  }
+  .bit.hdr { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+  .bit.va { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(79,158,255,0.3); }
+  .bit.vb { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.3); }
+  .bit.vc { background: var(--green-dim); color: var(--green); border: 1px solid rgba(45,212,160,0.3); }
+  .bit.vd { background: rgba(248,113,113,0.12); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .bit.empty { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0.75rem 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.7rem; color: var(--text2); }
+  .legend-sq { width: 11px; height: 11px; border-radius: 2px; }
+
+  /* ── BYTES COMPARISON ── */
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 1rem 0; }
+  @media(max-width:520px){ .comparison-grid { grid-template-columns:1fr; } }
+  .cmp-card { background: var(--surface2); border-radius: 10px; padding: 1.25rem; border: 1px solid var(--border); }
+  .cmp-card.before { border-color: rgba(248,113,113,0.3); }
+  .cmp-card.after { border-color: rgba(45,212,160,0.3); }
+  .cmp-label { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+  .cmp-card.before .cmp-label { color: var(--red); }
+  .cmp-card.after .cmp-label { color: var(--green); }
+  .cmp-bytes { font-size: 2.5rem; font-weight: 800; line-height: 1; letter-spacing: -0.04em; }
+  .cmp-card.before .cmp-bytes { color: var(--red); }
+  .cmp-card.after .cmp-bytes { color: var(--green); }
+  .cmp-detail { font-family: var(--mono); font-size: 0.72rem; color: var(--text3); margin-top: 4px; line-height: 1.6; }
+
+  .savings-bar { margin: 1.25rem 0; }
+  .savings-track { height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin: 6px 0; }
+  .savings-fill { height: 100%; background: linear-gradient(90deg, var(--green), #2dd4a066); border-radius: 4px; transition: width 1s cubic-bezier(0.34,1.3,0.64,1); }
+  .savings-labels { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.68rem; color: var(--text3); }
+
+  /* ── PLAYGROUND ── */
+  .playground-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media(max-width:600px){ .playground-grid { grid-template-columns:1fr; } }
+
+  .input-section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
+  .input-label { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 0.75rem; display: block; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 12px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--blue-dim); border: 1px solid rgba(79,158,255,0.3);
+    color: var(--blue); padding: 3px 10px; border-radius: 5px;
+    font-family: var(--mono); font-size: 0.75rem; cursor: pointer;
+  }
+  .tag:hover { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.3); color: var(--red); }
+  .add-row { display: flex; gap: 8px; }
+  .pg-input {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 0.82rem;
+    padding: 7px 12px; border-radius: 7px; outline: none;
+  }
+  .pg-input:focus { border-color: var(--blue); }
+  .pg-btn {
+    background: var(--blue); color: #fff; border: none; padding: 7px 16px;
+    border-radius: 7px; font-family: var(--display); font-size: 0.8rem;
+    font-weight: 600; cursor: pointer; transition: opacity 0.2s; white-space: nowrap;
+  }
+  .pg-btn:hover { opacity: 0.85; }
+  .pg-btn.secondary { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+
+  .output-section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
+  .output-block { margin-bottom: 1.25rem; }
+  .out-label { font-family: var(--mono); font-size: 0.65rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .out-chips { display: flex; gap: 6px; flex-wrap: wrap; min-height: 34px; }
+  .out-chip { padding: 5px 12px; border-radius: 6px; font-family: var(--mono); font-size: 0.78rem; font-weight: 500; }
+  .out-chip.raw { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(79,158,255,0.25); }
+  .out-chip.delta { background: var(--green-dim); color: var(--green); border: 1px solid rgba(45,212,160,0.25); }
+  .out-chip.blk-a { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.25); }
+  .out-chip.blk-b { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
+  .bits-viz { display: flex; flex-direction: column; gap: 6px; }
+  .bits-row-wrap { display: flex; gap: 3px; flex-wrap: wrap; }
+  .b { width: 18px; height: 22px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.6rem; border-radius: 3px; }
+
+  .stat-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 1rem; }
+  .stat-box { flex: 1; min-width: 90px; background: var(--surface2); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+  .stat-lbl { font-family: var(--mono); font-size: 0.6rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+  .stat-val { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.03em; }
+
+  /* ── SUMMARY DIAGRAM ── */
+  .flow-wrap { overflow-x: auto; padding: 1rem 0; }
+  .flow { display: flex; align-items: center; gap: 0; min-width: 600px; }
+  .flow-node {
+    flex: 1; text-align: center; padding: 1rem 0.5rem;
+    border-radius: 10px;
+  }
+  .flow-arrow { color: var(--text3); font-size: 1.2rem; padding: 0 4px; flex-shrink: 0; }
+  .flow-node-title { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .flow-node-val { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
+  .flow-node-sub { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); margin-top: 3px; }
+
+  .fn1 { background: var(--blue-dim); border: 1px solid rgba(79,158,255,0.2); }
+  .fn1 .flow-node-title { color: var(--blue); }
+  .fn1 .flow-node-val { color: var(--blue); }
+  .fn2 { background: var(--green-dim); border: 1px solid rgba(45,212,160,0.2); }
+  .fn2 .flow-node-title { color: var(--green); }
+  .fn2 .flow-node-val { color: var(--green); }
+  .fn3 { background: var(--purple-dim); border: 1px solid rgba(167,139,250,0.2); }
+  .fn3 .flow-node-title { color: var(--purple); }
+  .fn3 .flow-node-val { color: var(--purple); }
+  .fn4 { background: var(--amber-dim); border: 1px solid rgba(245,158,11,0.2); }
+  .fn4 .flow-node-title { color: var(--amber); }
+  .fn4 .flow-node-val { color: var(--amber); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-badge">Lucene Internals Deep-Dive</div>
+    <h1>Posting Lists &amp;<br><em>Delta Encoding</em></h1>
+    <p>How Apache Lucene compresses billions of document IDs without losing a single byte of information — a step-by-step visual walkthrough.</p>
+    <div class="nav-pills">
+      <a class="nav-pill active" href="#inverted-index">01 Inverted Index</a>
+      <a class="nav-pill" href="#delta">02 Delta Encoding</a>
+      <a class="nav-pill" href="#blocks">03 Blocking</a>
+      <a class="nav-pill" href="#bitpacking">04 Bit Packing</a>
+      <a class="nav-pill" href="#savings">05 Savings</a>
+      <a class="nav-pill" href="#playground">Playground</a>
+    </div>
+  </div>
+
+  <!-- ── SECTION 1: INVERTED INDEX ── -->
+  <div class="section" id="inverted-index">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <span class="section-title">Inverted Index</span>
+    </div>
+    <p class="section-sub">At the core of every search engine is an inverted index — a lookup table mapping each <strong>term</strong> to the list of documents that contain it. Click a term to highlight its documents.</p>
+
+    <div class="card">
+      <div class="card-label">// sample corpus — 3 documents</div>
+      <div class="doc-strip">
+        <div class="doc-card" id="dc1">
+          <div class="doc-num">DOC 1</div>
+          <div class="doc-text">"<mark>hello</mark> <mark>world</mark>"</div>
+        </div>
+        <div class="doc-card" id="dc2">
+          <div class="doc-num">DOC 2</div>
+          <div class="doc-text">"<mark>hello</mark> <mark>lucene</mark>"</div>
+        </div>
+        <div class="doc-card" id="dc3">
+          <div class="doc-num">DOC 3</div>
+          <div class="doc-text">"<mark>world</mark> of <mark>lucene</mark>"</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">// inverted index — click a term to explore</div>
+      <table class="index-table">
+        <thead>
+          <tr><th>Term</th><th>Posting List (doc IDs)</th><th>Frequency</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="term-chip" style="cursor:pointer" onclick="highlightTerm('hello')">hello</span></td>
+            <td><div class="post-chips" id="pc-hello">
+              <div class="post-chip" onclick="highlightDoc(1)">Doc 1</div>
+              <div class="post-chip" onclick="highlightDoc(2)">Doc 2</div>
+            </div></td>
+            <td><span style="font-family:var(--mono);font-size:0.75rem;color:var(--text2)">2 docs</span></td>
+          </tr>
+          <tr>
+            <td><span class="term-chip" style="cursor:pointer" onclick="highlightTerm('world')">world</span></td>
+            <td><div class="post-chips" id="pc-world">
+              <div class="post-chip" onclick="highlightDoc(1)">Doc 1</div>
+              <div class="post-chip" onclick="highlightDoc(3)">Doc 3</div>
+            </div></td>
+            <td><span style="font-family:var(--mono);font-size:0.75rem;color:var(--text2)">2 docs</span></td>
+          </tr>
+          <tr>
+            <td><span class="term-chip" style="cursor:pointer" onclick="highlightTerm('lucene')">lucene</span></td>
+            <td><div class="post-chips" id="pc-lucene">
+              <div class="post-chip" onclick="highlightDoc(2)">Doc 2</div>
+              <div class="post-chip" onclick="highlightDoc(3)">Doc 3</div>
+            </div></td>
+            <td><span style="font-family:var(--mono);font-size:0.75rem;color:var(--text2)">2 docs</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <div class="callout-icon">⚠️</div>
+      <div>
+        <strong>The scaling problem.</strong> In a real search engine, common terms like "the" or "is" can appear in <em>millions of documents</em>. A posting list of [1, 100000, 200000, … 9999999] stored as plain 32-bit integers would cost <strong>~40 MB just for one term</strong>. Lucene needs a smarter approach.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 2: DELTA ENCODING ── -->
+  <div class="section" id="delta">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <span class="section-title">Delta Encoding</span>
+    </div>
+    <p class="section-sub">Instead of storing raw document IDs, Lucene stores the <strong>gaps (deltas)</strong> between consecutive IDs. Since IDs are sorted and the gaps are small, the numbers become much smaller — and smaller numbers need fewer bits.</p>
+
+    <div class="card">
+      <div class="card-label">// original posting list</div>
+      <div class="step-row" id="raw-row">
+        <div class="num-cell raw-cell"><div class="num-box">10</div><div class="num-caption">4 bytes</div></div>
+        <div class="num-cell raw-cell"><div class="num-box">40</div><div class="num-caption">4 bytes</div></div>
+        <div class="num-cell raw-cell"><div class="num-box">50</div><div class="num-caption">4 bytes</div></div>
+        <div class="num-cell raw-cell"><div class="num-box">90</div><div class="num-caption">4 bytes</div></div>
+      </div>
+      <div class="arrow-down">
+        <span>↓</span>
+        <span class="transform-label">delta_encode(list)</span>
+        <span style="font-size:0.75rem;color:var(--text3);font-family:var(--mono)">// subtract prev from each element</span>
+      </div>
+      <div class="card-label">// delta encoded list</div>
+      <div class="step-row" id="delta-row">
+        <div class="num-cell delta-cell"><div class="num-box">10</div><div class="num-caption">first (anchor)</div></div>
+        <div class="num-cell delta-cell"><div class="num-box">30</div><div class="num-caption">40−10</div></div>
+        <div class="num-cell delta-cell"><div class="num-box">10</div><div class="num-caption">50−40</div></div>
+        <div class="num-cell delta-cell"><div class="num-box">40</div><div class="num-caption">90−50</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">// the math</div>
+      <div class="formula-block">
+        <span class="c">// Original IDs (sorted)</span><br>
+        <span class="k">raw</span>    = [<span class="v">10</span>, <span class="v">40</span>, <span class="v">50</span>, <span class="v">90</span>]<br><br>
+        <span class="c">// Delta encoding rule</span><br>
+        <span class="k">delta</span>[<span class="v">0</span>] = <span class="v">raw</span>[<span class="v">0</span>]                 <span class="c">// = 10 (anchor)</span><br>
+        <span class="k">delta</span>[<span class="v">i</span>] = <span class="v">raw</span>[<span class="v">i</span>] <span class="op">-</span> <span class="v">raw</span>[<span class="v">i-1</span>]   <span class="c">// gap from previous</span><br><br>
+        <span class="c">// Result</span><br>
+        <span class="k">delta</span>  = [<span class="v">10</span>, <span class="v">30</span>, <span class="v">10</span>, <span class="v">40</span>]<br><br>
+        <span class="c">// Decode: prefix sum restores original</span><br>
+        <span class="k">decoded</span>[<span class="v">i</span>] = <span class="op">Σ</span> <span class="v">delta</span>[<span class="v">0..i</span>]
+      </div>
+      <div class="callout" style="background:var(--green-dim);border-color:rgba(45,212,160,0.2);">
+        <div class="callout-icon">💡</div>
+        <div>
+          <strong>Why this helps:</strong> The max value dropped from <strong>90 → 40</strong>. A value of 90 needs 7 bits. A value of 40 needs 6 bits. At scale, going from needing 27 bits per ID to 6 bits is a <strong>4.5× compression</strong>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 3: BLOCKING ── -->
+  <div class="section" id="blocks">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <span class="section-title">Blocking for Efficiency</span>
+    </div>
+    <p class="section-sub">Lucene doesn't compress the entire list in one shot. It splits the delta-encoded list into <strong>fixed-size blocks</strong> (called <code style="font-family:var(--mono);color:var(--blue);font-size:0.85em">PackedDocDeltaBlock</code>). Each block is independently compressed based on the maximum value it contains.</p>
+
+    <div class="card">
+      <div class="card-label">// delta list split into 2 blocks of size 2</div>
+      <div class="block-wrap">
+        <div class="block-card block-a">
+          <div class="block-header">Block A — values [10, 30]</div>
+          <div class="block-body">
+            <div class="block-vals">
+              <div class="bval">10</div>
+              <div class="bval">30</div>
+            </div>
+            <div class="block-stat">
+              <strong>Max value:</strong> 30<br>
+              <strong>Bits needed:</strong> ⌈log₂(30+1)⌉ = <strong>5 bits</strong><br>
+              <strong>Header:</strong> 1 byte (stores "5 bits/value")<br>
+              <strong>Total:</strong> 1 + ⌈(5×2)/8⌉ = 1 + 2 = <strong>3 bytes</strong>
+            </div>
+          </div>
+        </div>
+        <div class="block-card block-b">
+          <div class="block-header">Block B — values [10, 40]</div>
+          <div class="block-body">
+            <div class="block-vals">
+              <div class="bval">10</div>
+              <div class="bval">40</div>
+            </div>
+            <div class="block-stat">
+              <strong>Max value:</strong> 40<br>
+              <strong>Bits needed:</strong> ⌈log₂(40+1)⌉ = <strong>6 bits</strong><br>
+              <strong>Header:</strong> 1 byte (stores "6 bits/value")<br>
+              <strong>Total:</strong> 1 + ⌈(6×2)/8⌉ = 1 + 2 = <strong>3 bytes</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">// block structure layout</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-family:var(--mono);font-size:0.8rem;">
+        <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+          <div style="background:var(--amber-dim);border-right:1px solid rgba(245,158,11,0.3);color:var(--amber);padding:10px 16px;font-size:0.75rem;white-space:nowrap;">
+            HEADER<br><span style="font-size:0.62rem;color:var(--text3)">1 byte<br>bits/val</span>
+          </div>
+          <div style="background:var(--purple-dim);border-right:1px solid rgba(167,139,250,0.3);color:var(--purple);padding:10px 16px;flex:1;">
+            VALUE 0<br><span style="font-size:0.62rem;color:var(--text3)">N bits</span>
+          </div>
+          <div style="background:var(--purple-dim);color:var(--purple);padding:10px 16px;flex:1;">
+            VALUE 1<br><span style="font-size:0.62rem;color:var(--text3)">N bits</span>
+          </div>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text3);text-align:center;">↑ values packed back-to-back at bit level, no wasted bits</div>
+      </div>
+
+      <div class="callout" style="margin-top:1rem;">
+        <div class="callout-icon">🔑</div>
+        <div>
+          <strong>Why blocks?</strong> If one outlier value of 10,000,000 were in the list, using the whole list's max would force every value to use 24 bits. With blocks, only the block containing that outlier pays the high bit-cost. Other blocks stay cheap.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 4: BIT PACKING ── -->
+  <div class="section" id="bitpacking">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <span class="section-title">Bit Packing</span>
+    </div>
+    <p class="section-sub">The final step: values are packed at the bit level — no alignment padding, no wasted space. Values of different bit-widths are laid out continuously in a shared integer.</p>
+
+    <div class="card">
+      <div class="card-label">// naive storage vs bit-packed (Block A: [10, 30] using 5 bits each)</div>
+
+      <div style="margin-bottom:1.5rem;">
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-bottom:6px;">NAIVE — 2 × 32-bit integers = 64 bits total (58 wasted)</div>
+        <div class="bit-row">
+          <!-- 32 bits for value 10 (00...01010) -->
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit va">0</div><div class="bit va">1</div><div class="bit va">0</div><div class="bit va">1</div><div class="bit va">0</div>
+          <!-- 32 bits for value 30 (00...11110) -->
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+          <div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">0</div>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-sq" style="background:var(--blue-dim);border:1px solid rgba(79,158,255,0.3)"></div>value 10 (01010)</div>
+          <div class="legend-item"><div class="legend-sq" style="background:var(--purple-dim);border:1px solid rgba(167,139,250,0.3)"></div>value 30 (11110)</div>
+          <div class="legend-item"><div class="legend-sq" style="background:var(--surface2);border:1px solid var(--border)"></div>wasted zeros</div>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-bottom:6px;">BIT-PACKED — header (1 byte) + 10 bits packed = ~2 bytes total</div>
+        <div class="bit-row">
+          <!-- 1 byte header = "5" -->
+          <div class="bit hdr">0</div><div class="bit hdr">0</div><div class="bit hdr">0</div><div class="bit hdr">0</div><div class="bit hdr">0</div><div class="bit hdr">1</div><div class="bit hdr">0</div><div class="bit hdr">1</div>
+          <!-- value 10 = 01010 -->
+          <div class="bit va">0</div><div class="bit va">1</div><div class="bit va">0</div><div class="bit va">1</div><div class="bit va">0</div>
+          <!-- value 30 = 11110 -->
+          <div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">1</div><div class="bit vb">0</div>
+          <!-- 6 padding bits to fill byte -->
+          <div class="bit empty">0</div><div class="bit empty">0</div><div class="bit empty">0</div>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-sq" style="background:var(--amber-dim);border:1px solid rgba(245,158,11,0.3)"></div>header byte (value = 5 = bits per number)</div>
+          <div class="legend-item"><div class="legend-sq" style="background:var(--blue-dim);border:1px solid rgba(79,158,255,0.3)"></div>value 10 (01010)</div>
+          <div class="legend-item"><div class="legend-sq" style="background:var(--purple-dim);border:1px solid rgba(167,139,250,0.3)"></div>value 30 (11110)</div>
+          <div class="legend-item"><div class="legend-sq" style="background:var(--surface2);border:1px solid var(--border)"></div>padding to byte boundary</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 5: SAVINGS ── -->
+  <div class="section" id="savings">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <span class="section-title">Total Byte Savings</span>
+    </div>
+    <p class="section-sub">Combining delta encoding + blocking + bit packing for our example list [10, 40, 50, 90]:</p>
+
+    <div class="comparison-grid">
+      <div class="cmp-card before">
+        <div class="cmp-label">Before — raw ints</div>
+        <div class="cmp-bytes">16</div>
+        <div class="cmp-label" style="margin-top:2px;">bytes</div>
+        <div class="cmp-detail">4 values × 4 bytes (32-bit int)<br>= 4 × 32 bits = 128 bits total</div>
+      </div>
+      <div class="cmp-card after">
+        <div class="cmp-label">After — delta + packed</div>
+        <div class="cmp-bytes">5</div>
+        <div class="cmp-label" style="margin-top:2px;">bytes</div>
+        <div class="cmp-detail">
+          Block A: 1 hdr + ⌈10 bits/8⌉ = 3 bytes<br>
+          Block B: 1 hdr + ⌈12 bits/8⌉ = 3 bytes<br>
+          <span style="color:var(--green)">≈ 5 bytes total (shared boundary)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="savings-bar">
+      <div class="savings-labels"><span>0%</span><span style="color:var(--green);font-family:var(--mono);font-size:0.75rem;font-weight:600">68.75% space saved</span><span>100%</span></div>
+      <div class="savings-track">
+        <div class="savings-fill" id="savings-fill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">// end-to-end pipeline</div>
+      <div class="flow-wrap">
+        <div class="flow">
+          <div class="flow-node fn1">
+            <div class="flow-node-title">Raw IDs</div>
+            <div class="flow-node-val">[10,40,50,90]</div>
+            <div class="flow-node-sub">16 bytes</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node fn2">
+            <div class="flow-node-title">Delta Encode</div>
+            <div class="flow-node-val">[10,30,10,40]</div>
+            <div class="flow-node-sub">smaller values</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node fn3">
+            <div class="flow-node-title">Block Split</div>
+            <div class="flow-node-val">[10,30] [10,40]</div>
+            <div class="flow-node-sub">per-block max</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node fn4">
+            <div class="flow-node-title">Bit Pack</div>
+            <div class="flow-node-val">5 bytes</div>
+            <div class="flow-node-sub">69% smaller</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout" style="background:var(--amber-dim);border-color:rgba(245,158,11,0.2);">
+      <div class="callout-icon">📈</div>
+      <div>
+        <strong>At scale:</strong> A posting list of 10 million doc IDs (like "the" in a large corpus) drops from <strong>40 MB → ~8 MB</strong>. Lucene also applies Frame of Reference (FOR) encoding and Roaring Bitmaps for extreme cases — the same delta-then-pack principle, tuned further.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PLAYGROUND ── -->
+  <div class="section" id="playground">
+    <div class="section-header">
+      <span class="section-num">✦</span>
+      <span class="section-title">Interactive Playground</span>
+    </div>
+    <p class="section-sub">Enter your own document IDs and watch the full compression pipeline in real time.</p>
+
+    <div class="playground-grid">
+      <div class="input-section">
+        <label class="input-label">// document IDs (sorted, click to remove)</label>
+        <div class="tag-row" id="tag-row"></div>
+        <div class="add-row">
+          <input class="pg-input" type="number" id="pg-num" placeholder="Enter doc ID..." min="1" max="99999">
+          <button class="pg-btn" onclick="addDocId()">Add</button>
+          <button class="pg-btn secondary" onclick="resetIds()">Reset</button>
+        </div>
+        <div style="margin-top:1rem;">
+          <label class="input-label">// block size</label>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <input type="range" min="2" max="8" value="4" id="block-size-slider" style="flex:1;" oninput="updateBlockLabel()">
+            <span id="block-size-label" style="font-family:var(--mono);font-size:0.82rem;color:var(--text);min-width:30px;">4</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="output-section">
+        <div class="output-block">
+          <div class="out-label">raw ids</div>
+          <div class="out-chips" id="out-raw"></div>
+        </div>
+        <div class="output-block">
+          <div class="out-label">delta encoded</div>
+          <div class="out-chips" id="out-delta"></div>
+        </div>
+        <div class="output-block">
+          <div class="out-label">blocks (color = block)</div>
+          <div class="out-chips" id="out-blocks"></div>
+        </div>
+        <div class="stat-strip" id="stat-strip">
+          <div class="stat-box">
+            <div class="stat-lbl">Raw</div>
+            <div class="stat-val" id="s-raw" style="color:var(--red)">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Compressed</div>
+            <div class="stat-val" id="s-comp" style="color:var(--green)">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Saved</div>
+            <div class="stat-val" id="s-saved" style="color:var(--amber)">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── SCROLL ANIMATIONS ──
+  const sections = document.querySelectorAll('.section');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08 });
+  sections.forEach(s => observer.observe(s));
+
+  // Nav pill active
+  const pills = document.querySelectorAll('.nav-pill');
+  window.addEventListener('scroll', () => {
+    let cur = '';
+    sections.forEach(s => { if(window.scrollY >= s.offsetTop - 200) cur = s.id; });
+    pills.forEach(p => { p.classList.toggle('active', p.getAttribute('href') === '#' + cur); });
+  });
+
+  // ── SAVINGS BAR ANIMATION ──
+  setTimeout(() => {
+    const fill = document.getElementById('savings-fill');
+    if(fill) fill.style.width = '68.75%';
+  }, 800);
+
+  // ── INVERTED INDEX HIGHLIGHT ──
+  function highlightTerm(term) {
+    // reset
+    document.querySelectorAll('.post-chip').forEach(c => c.classList.remove('lit'));
+    document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('lit'));
+
+    const map = {
+      hello: [1, 2], world: [1, 3], lucene: [2, 3]
+    };
+    map[term].forEach(d => {
+      document.getElementById('dc' + d).classList.add('lit');
+    });
+    const chips = document.querySelectorAll('#pc-' + term + ' .post-chip');
+    chips.forEach(c => c.classList.add('lit'));
+  }
+
+  function highlightDoc(num) {
+    document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('lit'));
+    document.querySelectorAll('.post-chip').forEach(c => c.classList.remove('lit'));
+    document.getElementById('dc' + num).classList.add('lit');
+  }
+
+  // ── PLAYGROUND ──
+  let docIds = [10, 40, 50, 90, 110, 200, 500];
+  const blockColors = ['blk-a','blk-b','out-chip raw','out-chip delta'];
+  const blockColorList = ['blk-a','blk-b','raw','delta'];
+
+  function getBlockColors() {
+    return ['blk-a','blk-b','blk-a','blk-b','blk-a','blk-b','blk-a','blk-b'];
+  }
+
+  function renderPlayground() {
+    const blockSize = parseInt(document.getElementById('block-size-slider').value);
+    const sorted = [...docIds].sort((a,b) => a-b);
+
+    // Render tags
+    const tr = document.getElementById('tag-row');
+    tr.innerHTML = '';
+    sorted.forEach(id => {
+      const t = document.createElement('div');
+      t.className = 'tag';
+      t.textContent = id;
+      t.title = 'Click to remove';
+      t.onclick = () => { docIds = docIds.filter(x => x !== id); renderPlayground(); };
+      tr.appendChild(t);
+    });
+
+    if(sorted.length === 0) {
+      document.getElementById('out-raw').innerHTML = '<span style="color:var(--text3);font-family:var(--mono);font-size:0.75rem">// add some IDs above</span>';
+      document.getElementById('out-delta').innerHTML = '';
+      document.getElementById('out-blocks').innerHTML = '';
+      return;
+    }
+
+    // Raw
+    const rawEl = document.getElementById('out-raw');
+    rawEl.innerHTML = '';
+    sorted.forEach(id => {
+      const c = document.createElement('div');
+      c.className = 'out-chip raw';
+      c.textContent = id;
+      rawEl.appendChild(c);
+    });
+
+    // Delta
+    const deltas = sorted.map((v, i) => i === 0 ? v : v - sorted[i-1]);
+    const deltaEl = document.getElementById('out-delta');
+    deltaEl.innerHTML = '';
+    deltas.forEach((d, i) => {
+      const c = document.createElement('div');
+      c.className = 'out-chip delta';
+      c.textContent = d;
+      c.title = i === 0 ? 'anchor' : `${sorted[i]} − ${sorted[i-1]}`;
+      deltaEl.appendChild(c);
+    });
+
+    // Blocks
+    const blocksEl = document.getElementById('out-blocks');
+    blocksEl.innerHTML = '';
+    const colors = ['blk-a','blk-b'];
+    for(let i = 0; i < deltas.length; i += blockSize) {
+      const block = deltas.slice(i, i + blockSize);
+      const colorIdx = Math.floor(i / blockSize) % 2;
+      block.forEach(v => {
+        const c = document.createElement('div');
+        c.className = 'out-chip ' + colors[colorIdx];
+        c.textContent = v;
+        blocksEl.appendChild(c);
+      });
+    }
+
+    // Stats
+    const rawBytes = sorted.length * 4;
+    let compBits = 0;
+    for(let i = 0; i < deltas.length; i += blockSize) {
+      const block = deltas.slice(i, i + blockSize);
+      const maxVal = Math.max(...block);
+      const bits = maxVal === 0 ? 1 : Math.ceil(Math.log2(maxVal + 1));
+      compBits += 8 + bits * block.length; // 1 byte header + packed bits
+    }
+    const compBytes = Math.ceil(compBits / 8);
+    const saved = Math.round((1 - compBytes / rawBytes) * 100);
+
+    document.getElementById('s-raw').textContent = rawBytes + 'B';
+    document.getElementById('s-comp').textContent = compBytes + 'B';
+    document.getElementById('s-saved').textContent = Math.max(0, saved) + '%';
+  }
+
+  function addDocId() {
+    const input = document.getElementById('pg-num');
+    const val = parseInt(input.value);
+    if(!isNaN(val) && val > 0 && !docIds.includes(val) && docIds.length < 20) {
+      docIds.push(val);
+      renderPlayground();
+      input.value = '';
+      input.focus();
+    }
+  }
+
+  function resetIds() {
+    docIds = [10, 40, 50, 90, 110, 200, 500];
+    renderPlayground();
+  }
+
+  function updateBlockLabel() {
+    const v = document.getElementById('block-size-slider').value;
+    document.getElementById('block-size-label').textContent = v;
+    renderPlayground();
+  }
+
+  document.getElementById('pg-num').addEventListener('keydown', e => {
+    if(e.key === 'Enter') addDocId();
+  });
+
+  document.getElementById('block-size-slider').addEventListener('input', renderPlayground);
+
+  renderPlayground();
+</script>
+</body>
+</html>
