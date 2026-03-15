@@ -1,0 +1,2159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCP & .NET Buffer Deep Dive</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Unbounded:wght@700;900&family=DM+Sans:wght@400;500;600&display=swap');
+
+:root {
+  --bg:       #060810;
+  --surface:  #0c0f1a;
+  --card:     #101520;
+  --border:   #1a1f35;
+  --text:     #c8d0e8;
+  --muted:    #445070;
+  --dim:      #2a3050;
+
+  --green:    #00e5a0;
+  --amber:    #f59e0b;
+  --red:      #ef4444;
+  --blue:     #3b82f6;
+  --purple:   #a78bfa;
+  --cyan:     #06b6d4;
+  --pink:     #ec4899;
+  --orange:   #f97316;
+
+  --send-buf: #f59e0b;
+  --recv-buf: #00e5a0;
+  --app:      #a78bfa;
+  --http:     #3b82f6;
+  --kernel:   #06b6d4;
+  --wire:     #6b7280;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body {
+  background:var(--bg);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+  font-size:14px;
+  line-height:1.6;
+  min-height:100vh;
+}
+
+/* grid bg */
+body::before {
+  content:'';position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,160,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,229,160,.02) 1px,transparent 1px);
+  background-size:48px 48px;
+  pointer-events:none;z-index:0;
+}
+
+/* ── LAYOUT ── */
+.shell { display:flex; min-height:100vh; position:relative; z-index:1; }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width:260px;
+  flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  position:sticky;
+  top:0;
+  height:100vh;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+}
+
+.sidebar-logo {
+  padding:1.5rem 1.25rem 1rem;
+  border-bottom:1px solid var(--border);
+}
+.sidebar-logo .brand {
+  font-family:'Unbounded',sans-serif;
+  font-size:.75rem;
+  font-weight:900;
+  background:linear-gradient(135deg,var(--green),var(--cyan));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  letter-spacing:.02em;
+  display:block;margin-bottom:.2rem;
+}
+.sidebar-logo .sub {
+  font-size:.65rem;color:var(--muted);
+  font-family:'JetBrains Mono',monospace;
+  letter-spacing:.1em;
+}
+
+.nav-section {
+  padding:.75rem 1rem .25rem;
+  font-size:.58rem;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-family:'JetBrains Mono',monospace;
+}
+
+.nav-item {
+  display:flex;align-items:center;gap:.6rem;
+  padding:.45rem 1.25rem;
+  cursor:pointer;
+  font-size:.8rem;
+  color:var(--muted);
+  border-left:2px solid transparent;
+  transition:all .15s;
+  user-select:none;
+}
+.nav-item:hover { color:var(--text); background:rgba(255,255,255,.03); }
+.nav-item.active {
+  color:var(--green);
+  border-left-color:var(--green);
+  background:rgba(0,229,160,.06);
+}
+.nav-dot {
+  width:6px;height:6px;border-radius:50%;
+  background:currentColor;flex-shrink:0;
+  opacity:.6;
+}
+.nav-item.active .nav-dot { opacity:1; }
+
+/* ── MAIN ── */
+.main {
+  flex:1;
+  padding:2rem 2.5rem 4rem;
+  max-width:960px;
+}
+
+/* ── SECTIONS ── */
+.section { display:none; animation:fadeUp .3s ease; }
+.section.active { display:block; }
+
+@keyframes fadeUp {
+  from{opacity:0;transform:translateY(12px);}
+  to{opacity:1;transform:translateY(0);}
+}
+
+/* ── PAGE HEADER ── */
+.page-header { margin-bottom:2rem; }
+.page-header .eyebrow {
+  font-family:'JetBrains Mono',monospace;
+  font-size:.65rem;letter-spacing:.3em;
+  color:var(--muted);text-transform:uppercase;
+  margin-bottom:.5rem;display:block;
+}
+.page-header h2 {
+  font-family:'Unbounded',sans-serif;
+  font-size:clamp(1.4rem,2.5vw,2rem);
+  font-weight:900;
+  line-height:1.1;
+  margin-bottom:.6rem;
+}
+.page-header p { color:var(--muted);max-width:600px;font-size:.9rem; }
+
+/* ── CARDS ── */
+.card {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.25rem 1.5rem;
+  margin-bottom:1.25rem;
+}
+.card-title {
+  font-family:'JetBrains Mono',monospace;
+  font-size:.7rem;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;
+  margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem;
+}
+.card-title .dot {
+  width:8px;height:8px;border-radius:2px;flex-shrink:0;
+}
+
+/* ── CODE BLOCKS ── */
+pre {
+  background:#05060d;
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1rem 1.25rem;
+  font-family:'JetBrains Mono',monospace;
+  font-size:.75rem;
+  line-height:1.8;
+  overflow-x:auto;
+  margin:.75rem 0;
+  white-space:pre;
+}
+.c-green  { color:var(--green); }
+.c-amber  { color:var(--amber); }
+.c-red    { color:var(--red); }
+.c-blue   { color:var(--blue); }
+.c-purple { color:var(--purple); }
+.c-cyan   { color:var(--cyan); }
+.c-pink   { color:var(--pink); }
+.c-orange { color:var(--orange); }
+.c-muted  { color:var(--muted); }
+.c-text   { color:var(--text); }
+
+/* ── TAGS ── */
+.tag {
+  display:inline-block;padding:.15rem .5rem;
+  border-radius:4px;font-size:.65rem;font-weight:700;
+  font-family:'JetBrains Mono',monospace;
+  margin:.1rem;
+}
+.tag-green  { background:rgba(0,229,160,.12);  color:var(--green);  }
+.tag-red    { background:rgba(239,68,68,.12);   color:var(--red);    }
+.tag-amber  { background:rgba(245,158,11,.12);  color:var(--amber);  }
+.tag-blue   { background:rgba(59,130,246,.12);  color:var(--blue);   }
+.tag-purple { background:rgba(167,139,250,.12); color:var(--purple); }
+.tag-cyan   { background:rgba(6,182,212,.12);   color:var(--cyan);   }
+
+/* ── INSIGHT BOXES ── */
+.insight {
+  border-radius:8px;padding:.75rem 1rem;
+  margin:.75rem 0;font-size:.82rem;line-height:1.7;
+  border-left:3px solid;
+}
+.insight-green  { background:rgba(0,229,160,.06); border-color:var(--green);  color:#9efade; }
+.insight-red    { background:rgba(239,68,68,.06);  border-color:var(--red);    color:#fca5a5; }
+.insight-amber  { background:rgba(245,158,11,.06); border-color:var(--amber);  color:#fcd34d; }
+.insight-blue   { background:rgba(59,130,246,.06); border-color:var(--blue);   color:#93c5fd; }
+.insight-purple { background:rgba(167,139,250,.06);border-color:var(--purple); color:#c4b5fd; }
+
+/* ── TWO COL ── */
+.two-col { display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem; }
+.three-col { display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.25rem; }
+
+/* ── BUFFER VISUAL ── */
+.buf-wrap { margin:.5rem 0; }
+.buf-label {
+  font-family:'JetBrains Mono',monospace;
+  font-size:.6rem;color:var(--muted);
+  margin-bottom:.3rem;display:flex;justify-content:space-between;
+}
+.buf-bar {
+  height:28px;border-radius:5px;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  display:flex;overflow:hidden;
+  position:relative;
+}
+.buf-seg {
+  height:100%;display:flex;align-items:center;
+  justify-content:center;font-size:.6rem;
+  font-weight:700;font-family:'JetBrains Mono',monospace;
+  white-space:nowrap;overflow:hidden;padding:0 .3rem;
+  transition:all .4s ease;
+}
+.seg-empty   { background:rgba(255,255,255,.03); color:var(--muted); flex:1; }
+.seg-req1    { background:rgba(249,115,22,.25);  color:var(--orange); }
+.seg-req2    { background:rgba(59,130,246,.25);  color:var(--blue); }
+.seg-resp1   { background:rgba(236,72,153,.25);  color:var(--pink); }
+.seg-resp2   { background:rgba(6,182,212,.25);   color:var(--cyan); }
+.seg-stuck   { background:rgba(239,68,68,.25);   color:var(--red); }
+.seg-eof     { background:rgba(245,158,11,.15);  color:var(--amber); }
+.seg-data    { background:rgba(0,229,160,.2);    color:var(--green); }
+
+/* ── TCP STATE MACHINE ── */
+.state-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:.75rem;
+  margin-bottom:1.25rem;
+}
+.state-card {
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:.9rem;
+  cursor:pointer;
+  transition:all .2s;
+  background:var(--card);
+}
+.state-card:hover { transform:translateY(-2px); }
+.state-card.active-state { border-width:2px; }
+.state-name {
+  font-family:'JetBrains Mono',monospace;
+  font-weight:700;font-size:.72rem;
+  margin-bottom:.35rem;
+}
+.state-who { font-size:.65rem;color:var(--muted);margin-bottom:.3rem; }
+.state-desc { font-size:.7rem;line-height:1.5;color:var(--text); }
+.state-risk {
+  font-size:.6rem;font-family:'JetBrains Mono',monospace;
+  margin-top:.4rem;font-weight:700;
+}
+
+/* ── INTERACTIVE BUFFER SIM ── */
+.sim-container {
+  background:#05060d;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.5rem;
+  margin-bottom:1.25rem;
+}
+.sim-actors {
+  display:grid;
+  grid-template-columns:1fr 80px 1fr;
+  gap:.5rem;
+  margin-bottom:1rem;
+}
+.sim-actor {
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:.75rem;
+  font-size:.72rem;
+}
+.sim-actor-title {
+  font-family:'JetBrains Mono',monospace;
+  font-size:.62rem;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;
+  margin-bottom:.6rem;
+}
+.sim-wire {
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:.3rem;
+}
+.wire-pkt {
+  font-size:.58rem;font-weight:700;
+  padding:.2rem .4rem;border-radius:4px;
+  font-family:'JetBrains Mono',monospace;
+  text-align:center;
+  border:1px solid;
+  opacity:0;
+  transition:opacity .3s;
+}
+.wire-pkt.show { opacity:1; }
+.pkt-req  { color:var(--orange); border-color:rgba(249,115,22,.4); background:rgba(249,115,22,.1); }
+.pkt-resp { color:var(--pink);   border-color:rgba(236,72,153,.4); background:rgba(236,72,153,.1); }
+.pkt-fin  { color:var(--red);    border-color:rgba(239,68,68,.4);  background:rgba(239,68,68,.1); }
+.pkt-ack  { color:var(--green);  border-color:rgba(0,229,160,.4);  background:rgba(0,229,160,.1); }
+.wire-arrow { font-size:.85rem;color:var(--muted); }
+
+.sim-controls {
+  display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;
+}
+.sim-btn {
+  background:transparent;
+  border:1px solid var(--border);
+  color:var(--muted);
+  padding:.4rem 1rem;border-radius:6px;
+  cursor:pointer;
+  font-family:'JetBrains Mono',monospace;
+  font-size:.68rem;font-weight:600;
+  letter-spacing:.04em;
+  transition:all .18s;
+}
+.sim-btn:hover { border-color:var(--green);color:var(--green); }
+.sim-btn.active { border-color:var(--green);color:var(--green);background:rgba(0,229,160,.08); }
+.sim-btn.danger { border-color:var(--red);color:var(--red); }
+.sim-btn.danger:hover { background:rgba(239,68,68,.08); }
+
+.sim-log {
+  background:rgba(0,0,0,.4);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:.75rem 1rem;
+  font-family:'JetBrains Mono',monospace;
+  font-size:.68rem;
+  line-height:1.9;
+  min-height:80px;
+  margin-top:.75rem;
+  max-height:160px;
+  overflow-y:auto;
+}
+.log-green { color:var(--green); }
+.log-red   { color:var(--red); }
+.log-amber { color:var(--amber); }
+.log-blue  { color:var(--blue); }
+.log-muted { color:var(--muted); }
+.log-cyan  { color:var(--cyan); }
+
+/* ── TABS ── */
+.tabs {
+  display:flex;gap:.25rem;
+  border-bottom:1px solid var(--border);
+  margin-bottom:1.25rem;
+  overflow-x:auto;
+}
+.tab {
+  padding:.5rem 1rem;
+  font-size:.75rem;font-weight:600;
+  cursor:pointer;color:var(--muted);
+  border-bottom:2px solid transparent;
+  white-space:nowrap;transition:all .15s;
+  font-family:'JetBrains Mono',monospace;
+}
+.tab:hover { color:var(--text); }
+.tab.active { color:var(--green);border-bottom-color:var(--green); }
+.tab-content { display:none; }
+.tab-content.active { display:block; animation:fadeUp .25s ease; }
+
+/* ── COMPARISON GRID ── */
+.compare {
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:1rem;margin-bottom:1.25rem;
+}
+.compare-card {
+  border-radius:10px;border:1px solid;
+  overflow:hidden;
+}
+.compare-card.good { border-color:rgba(0,229,160,.3); }
+.compare-card.bad  { border-color:rgba(239,68,68,.3); }
+.compare-head {
+  padding:.6rem 1rem;font-size:.72rem;font-weight:700;
+  font-family:'JetBrains Mono',monospace;
+  border-bottom:1px solid;
+}
+.compare-card.good .compare-head { background:rgba(0,229,160,.08);color:var(--green);border-color:rgba(0,229,160,.2); }
+.compare-card.bad  .compare-head { background:rgba(239,68,68,.08); color:var(--red);  border-color:rgba(239,68,68,.2); }
+.compare-body { padding:.9rem 1rem;font-size:.78rem;line-height:1.8;background:var(--card); }
+
+/* ── QUIZ ── */
+.quiz-q {
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:1.25rem;margin-bottom:1rem;
+}
+.quiz-q .question {
+  font-size:.88rem;font-weight:600;margin-bottom:.9rem;
+}
+.quiz-options { display:flex;flex-direction:column;gap:.4rem; }
+.quiz-opt {
+  padding:.6rem 1rem;
+  border-radius:6px;border:1px solid var(--border);
+  cursor:pointer;font-size:.8rem;
+  transition:all .15s;
+  background:transparent;
+  text-align:left;color:var(--text);
+  font-family:'DM Sans',sans-serif;
+}
+.quiz-opt:hover:not(:disabled) { border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,.05); }
+.quiz-opt.correct { border-color:var(--green);background:rgba(0,229,160,.1);color:var(--green); }
+.quiz-opt.wrong   { border-color:var(--red);background:rgba(239,68,68,.1);color:var(--red); }
+.quiz-opt:disabled { cursor:not-allowed; }
+.quiz-explain {
+  margin-top:.75rem;font-size:.78rem;
+  padding:.6rem .9rem;border-radius:6px;
+  display:none;
+}
+.quiz-explain.show { display:block; }
+
+/* ── PROGRESS RING ── */
+.quiz-score {
+  text-align:center;padding:2rem;
+}
+.score-num {
+  font-family:'Unbounded',sans-serif;
+  font-size:3rem;font-weight:900;
+  background:linear-gradient(135deg,var(--green),var(--cyan));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+
+/* ── RULE TABLE ── */
+.rule-table {
+  width:100%;border-collapse:collapse;
+  font-size:.78rem;margin-bottom:1.25rem;
+}
+.rule-table th {
+  background:rgba(255,255,255,.03);
+  color:var(--muted);text-align:left;
+  padding:.55rem .9rem;font-size:.62rem;
+  letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace;
+}
+.rule-table td {
+  padding:.55rem .9rem;
+  border-bottom:1px solid rgba(26,31,53,.6);
+  vertical-align:top;line-height:1.5;
+}
+.rule-table tr:hover td { background:rgba(255,255,255,.015); }
+
+/* ── FIN SEQUENCE STEPPER ── */
+.stepper {
+  border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;margin-bottom:1.25rem;
+}
+.stepper-header {
+  display:flex;border-bottom:1px solid var(--border);
+  background:var(--surface);
+}
+.step-tab {
+  padding:.55rem 1rem;font-size:.7rem;
+  font-family:'JetBrains Mono',monospace;
+  cursor:pointer;color:var(--muted);
+  border-right:1px solid var(--border);
+  transition:all .15s;
+  border-bottom:2px solid transparent;
+}
+.step-tab:hover { color:var(--text); }
+.step-tab.active { color:var(--amber);border-bottom-color:var(--amber);background:rgba(245,158,11,.05); }
+.stepper-body { padding:1.25rem;background:var(--card); }
+
+/* ── CHEATSHEET ── */
+.cheatsheet-grid {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:.75rem;margin-bottom:1.25rem;
+}
+.cheat-card {
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:.9rem;
+}
+.cheat-card h4 {
+  font-family:'JetBrains Mono',monospace;
+  font-size:.68rem;font-weight:700;
+  letter-spacing:.08em;margin-bottom:.6rem;
+}
+.cheat-card ul {
+  list-style:none;font-size:.76rem;line-height:1.9;
+}
+.cheat-card li::before { content:'→ ';color:var(--muted); }
+
+/* scrollbar */
+::-webkit-scrollbar { width:4px;height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--dim);border-radius:4px; }
+
+@media(max-width:768px) {
+  .sidebar { display:none; }
+  .main { padding:1.5rem 1rem 3rem; }
+  .two-col,.three-col,.compare { grid-template-columns:1fr; }
+  .sim-actors { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── SIDEBAR ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <span class="brand">TCP INTERNALS</span>
+    <span class="sub">// today's deep dive</span>
+  </div>
+
+  <div class="nav-section">Core Concepts</div>
+  <div class="nav-item active" onclick="showSection('buffers')"><div class="nav-dot"></div>Kernel Buffers</div>
+  <div class="nav-item" onclick="showSection('sockets')"><div class="nav-dot"></div>Sockets & Ports</div>
+  <div class="nav-item" onclick="showSection('states')"><div class="nav-dot"></div>TCP States</div>
+
+  <div class="nav-section">Connection Teardown</div>
+  <div class="nav-item" onclick="showSection('fin')"><div class="nav-dot"></div>FIN Sequence</div>
+  <div class="nav-item" onclick="showSection('finwait')"><div class="nav-dot"></div>FIN_WAIT 1 & 2</div>
+  <div class="nav-item" onclick="showSection('closewait')"><div class="nav-dot"></div>CLOSE_WAIT</div>
+
+  <div class="nav-section">HTTP & .NET</div>
+  <div class="nav-item" onclick="showSection('keepalive')"><div class="nav-dot"></div>Keep-Alive & Drain</div>
+  <div class="nav-item" onclick="showSection('headersread')"><div class="nav-dot"></div>ResponseHeadersRead</div>
+  <div class="nav-item" onclick="showSection('dispose')"><div class="nav-dot"></div>Dispose & FIN</div>
+
+  <div class="nav-section">Reference</div>
+  <div class="nav-item" onclick="showSection('sim')"><div class="nav-dot"></div>Live Simulator</div>
+  <div class="nav-item" onclick="showSection('rules')"><div class="nav-dot"></div>Rules & Cheatsheet</div>
+  <div class="nav-item" onclick="showSection('quiz')"><div class="nav-dot"></div>Quiz Yourself</div>
+</aside>
+
+<!-- ── MAIN ── -->
+<main class="main">
+
+<!-- ══════════════════════════════════════════════
+     SECTION: KERNEL BUFFERS
+══════════════════════════════════════════════ -->
+<div class="section active" id="sec-buffers">
+  <div class="page-header">
+    <span class="eyebrow">// kernel internals</span>
+    <h2 style="background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Kernel Buffers</h2>
+    <p>Every TCP socket gets its own send buffer and recv buffer allocated in the kernel at handshake time.</p>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--send-buf)"></div>SEND BUFFER</div>
+      <div class="buf-wrap">
+        <div class="buf-label"><span>send buf ~16KB default</span><span style="color:var(--amber)">kernel owned</span></div>
+        <div class="buf-bar">
+          <div class="buf-seg seg-req1" style="width:15%">REQ bytes</div>
+          <div class="buf-seg seg-empty">free...</div>
+        </div>
+      </div>
+      <ul style="font-size:.8rem;line-height:2;list-style:none;margin-top:.75rem;">
+        <li>✅ App writes bytes → kernel queues here</li>
+        <li>✅ TCP drains automatically → sends to wire</li>
+        <li>✅ Waits for ACK per segment sent</li>
+        <li>✅ You <b>never touch</b> this directly</li>
+        <li style="color:var(--muted)">→ drains on its own, no action needed</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--recv-buf)"></div>RECV BUFFER</div>
+      <div class="buf-wrap">
+        <div class="buf-label"><span>recv buf ~87KB default</span><span style="color:var(--red)">app must drain!</span></div>
+        <div class="buf-bar">
+          <div class="buf-seg seg-resp1" style="width:60%">RESP bytes arriving</div>
+          <div class="buf-seg seg-empty">free</div>
+        </div>
+      </div>
+      <ul style="font-size:.8rem;line-height:2;list-style:none;margin-top:.75rem;">
+        <li>✅ Bytes arrive from wire → kernel places here</li>
+        <li style="color:var(--red)">❌ Does NOT drain automatically</li>
+        <li style="color:var(--red)">❌ App MUST read to empty it</li>
+        <li style="color:var(--amber)">⚠️ If full → TCP sends WINDOW=0</li>
+        <li style="color:var(--amber)">⚠️ WINDOW=0 → server pauses → deadlock</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--purple)"></div>LAYER STACK — what sits above the buffers</div>
+    <pre>
+<span class="c-purple">┌─────────────────────────────────────────────────────────┐
+│  APP LAYER  — your .NET code                            │
+│  HttpClient.SendAsync()  /  ReadAsStringAsync()         │
+└────────────────────────┬────────────────────────────────┘</span>
+                         │ reads/writes
+<span class="c-blue">┌────────────────────────▼────────────────────────────────┐
+│  HTTP LAYER — formats requests, parses responses        │
+│  adds headers, reads Content-Length, handles chunked    │
+└────────────────────────┬────────────────────────────────┘</span>
+                         │ byte stream
+<span class="c-amber">┌────────────────────────▼────────────────────────────────┐
+│  SEND BUFFER (kernel)   ~16KB                           │
+│  [ bytes waiting to go to wire         | free      ]    │
+│  TCP drains → sends segments → waits for ACKs           │
+└─────────────────────────────────────────────────────────┘</span>
+
+<span class="c-green">┌─────────────────────────────────────────────────────────┐
+│  RECV BUFFER (kernel)   ~87KB                           │
+│  [ bytes arrived from wire             | free      ]    │
+│  Sits here until YOUR APP reads it                      │
+└────────────────────────┬────────────────────────────────┘</span>
+                         │ app reads
+<span class="c-blue">┌────────────────────────▼────────────────────────────────┐
+│  HTTP LAYER — parses response bytes                     │
+└────────────────────────┬────────────────────────────────┘</span>
+                         │
+<span class="c-purple">┌────────────────────────▼────────────────────────────────┐
+│  APP LAYER — you get HttpResponseMessage                │
+└─────────────────────────────────────────────────────────┘</span></pre>
+  </div>
+
+  <div class="insight insight-amber">
+    <b>The golden asymmetry:</b> Send buffer drains itself. Recv buffer needs you. This asymmetry is the root cause of every CLOSE_WAIT and connection reuse problem in .NET.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: SOCKETS & PORTS
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-sockets">
+  <div class="page-header">
+    <span class="eyebrow">// kernel socket model</span>
+    <h2 style="background:linear-gradient(135deg,var(--cyan),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Sockets & Ports</h2>
+    <p>Buffers are created per socket, not per port. One port can have thousands of sockets — each with its own independent buffers.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--cyan)"></div>SOCKET IDENTITY — the 4-tuple</div>
+    <pre>
+<span class="c-green">Socket = unique 4-tuple</span>
+
+  ( src IP  :  src port  :  dst IP  :  dst port )
+  ─────────────────────────────────────────────
+  192.168.1.10 : <span class="c-orange">54321</span>  : 93.184.16.34 : <span class="c-blue">443</span>   ← socket A
+  192.168.1.10 : <span class="c-orange">54322</span>  : 93.184.16.34 : <span class="c-blue">443</span>   ← socket B  (different!)
+  192.168.1.10 : <span class="c-orange">54321</span>  : 93.184.16.34 : <span class="c-blue">80</span>    ← socket C  (different!)
+
+<span class="c-muted">Change ANY ONE value = completely different socket = separate buffers</span></pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--blue)"></div>ONE PORT → MANY SOCKETS → MANY BUFFERS</div>
+    <pre>
+<span class="c-muted">SERVER KERNEL — port 443</span>
+
+  LISTEN socket (port 443)
+        │
+        ├── Socket fd=7  client-A:54321  <span class="c-amber">send buf A</span> + <span class="c-green">recv buf A</span>
+        │
+        ├── Socket fd=8  client-B:54322  <span class="c-amber">send buf B</span> + <span class="c-green">recv buf B</span>
+        │
+        └── Socket fd=9  client-C:54323  <span class="c-amber">send buf C</span> + <span class="c-green">recv buf C</span>
+
+<span class="c-green">All sharing port 443. Completely isolated buffers.</span>
+<span class="c-muted">Filling recv buf A does NOT affect recv buf B at all.</span></pre>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--green)"></div>BUFFER LIFECYCLE</div>
+      <pre style="font-size:.7rem;">
+<span class="c-muted">SYN-ACK sent</span>
+    ↓
+<span class="c-green">Kernel allocates socket struct</span>
+<span class="c-amber">Kernel allocates send buf (~16KB)</span>
+<span class="c-green">Kernel allocates recv buf (~87KB)</span>
+    ↓
+<span class="c-muted">ESTABLISHED — buffers ready</span>
+    ↓
+<span class="c-muted">Data flows...</span>
+    ↓
+<span class="c-green">Socket → CLOSED</span>
+<span class="c-green">Kernel FREES both buffers ✅</span>
+
+<span class="c-red">CLOSE_WAIT stuck?</span>
+<span class="c-red">Buffers NEVER freed ❌</span>
+<span class="c-red">Memory leak forever</span></pre>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--amber)"></div>DEFAULT SIZES (Linux)</div>
+      <pre style="font-size:.7rem;">
+<span class="c-muted">/proc/sys/net/ipv4/tcp_rmem</span>
+<span class="c-green">recv buf:  4KB / 87KB / 6MB</span>
+            min  def   max
+
+<span class="c-muted">/proc/sys/net/ipv4/tcp_wmem</span>
+<span class="c-amber">send buf:  4KB / 16KB / 4MB</span>
+            min  def   max
+
+<span class="c-muted">Per connection cost: ~100KB</span>
+<span class="c-muted">1000 conns  = ~100MB</span>
+<span class="c-red">10000 conns = ~1GB ← CLOSE_WAIT cost</span>
+
+<span class="c-muted">Kernel auto-tunes in range</span></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: TCP STATES
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-states">
+  <div class="page-header">
+    <span class="eyebrow">// tcp state machine</span>
+    <h2 style="background:linear-gradient(135deg,var(--purple),var(--pink));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">TCP States</h2>
+    <p>Click any state to learn more. States only appear on specific sides — knowing WHO holds WHAT is the key.</p>
+  </div>
+
+  <div class="state-grid" id="stateGrid"></div>
+  <div class="card" id="stateDetail" style="display:none;border-width:2px;"></div>
+
+  <div class="card" style="margin-top:1.25rem;">
+    <div class="card-title"><div class="dot" style="background:var(--amber)"></div>GOLDEN RULE</div>
+    <div class="two-col" style="margin:0;">
+      <div>
+        <pre>
+<span class="c-green">Whoever sends FIN FIRST:</span>
+  FIN_WAIT_1 → FIN_WAIT_2
+  → TIME_WAIT → CLOSED</pre>
+      </div>
+      <div>
+        <pre>
+<span class="c-red">Whoever receives FIN FIRST:</span>
+  CLOSE_WAIT → LAST_ACK
+  → CLOSED</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: FIN SEQUENCE
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-fin">
+  <div class="page-header">
+    <span class="eyebrow">// connection teardown</span>
+    <h2 style="background:linear-gradient(135deg,var(--red),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">FIN Sequence</h2>
+    <p>The 4-step TCP close handshake. Choose which side closes first to see the state transitions.</p>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('finTab','fin-server')">Server closes first</div>
+    <div class="tab" onclick="switchTab('finTab','fin-client')">Client closes first</div>
+    <div class="tab" onclick="switchTab('finTab','fin-fin')">FIN in the buffer?</div>
+  </div>
+
+  <div id="finTab">
+    <div class="tab-content active" id="fin-server">
+      <pre>
+<span class="c-muted">CLIENT                                    SERVER</span>
+<span class="c-green">[ESTABLISHED]                        [ESTABLISHED]</span>
+     │                                        │
+     │              data flowing              │
+     │  ◀━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+     │                              <span class="c-muted">server idle timeout / restart / close()</span>
+     │                                        │
+     │  ◀━━━━━━━━━━━━━ <span class="c-red">FIN</span> ━━━━━━━━━━━━━━━  │  <span class="c-amber">[FIN_WAIT_1]</span>
+     │                                        │
+     │  <span class="c-muted">kernel auto-ACKs — no app needed</span>        │
+     │  ━━━━━━━━━━━━━━ <span class="c-green">ACK</span> ━━━━━━━━━━━━━━━▶  │  <span class="c-orange">[FIN_WAIT_2]</span>
+     │                                        │
+<span class="c-red">[CLOSE_WAIT]</span>                                │
+     │  <span class="c-red">⚠️  app MUST call Dispose() now</span>         │
+     │  <span class="c-red">if never called → stuck here forever</span>   │
+     │                                        │
+     │  app calls Dispose()                   │
+     │  ━━━━━━━━━━━━━━ <span class="c-red">FIN</span> ━━━━━━━━━━━━━━━▶  │  <span class="c-blue">[TIME_WAIT]</span>
+     │                                        │
+<span class="c-purple">[LAST_ACK]</span>                                  │
+     │  ◀━━━━━━━━━━━━━ <span class="c-green">ACK</span> ━━━━━━━━━━━━━━━  │
+     │                                        │
+<span class="c-muted">[CLOSED] ✅</span>                      <span class="c-muted">[TIME_WAIT → CLOSED after ~60s] ✅</span></pre>
+      <div class="insight insight-red">
+        <b>Server closes first:</b> Client gets CLOSE_WAIT. Server gets TIME_WAIT. TIME_WAIT is harmless. CLOSE_WAIT is dangerous if app never calls Dispose().
+      </div>
+    </div>
+
+    <div class="tab-content" id="fin-client">
+      <pre>
+<span class="c-muted">CLIENT                                    SERVER</span>
+<span class="c-green">[ESTABLISHED]                        [ESTABLISHED]</span>
+     │                                        │
+     │  app calls Dispose() / using ends      │
+     │  ━━━━━━━━━━━━━━ <span class="c-red">FIN</span> ━━━━━━━━━━━━━━━▶  │  <span class="c-red">[CLOSE_WAIT]</span>
+     │                                        │
+<span class="c-amber">[FIN_WAIT_1]</span>                                │
+     │  ◀━━━━━━━━━━━━━ <span class="c-green">ACK</span> ━━━━━━━━━━━━━━━  │
+     │                                        │
+<span class="c-orange">[FIN_WAIT_2]</span>                <span class="c-muted">server app calls close()</span>
+     │                                        │
+     │  ◀━━━━━━━━━━━━━ <span class="c-red">FIN</span> ━━━━━━━━━━━━━━━  │  <span class="c-purple">[LAST_ACK]</span>
+     │                                        │
+     │  ━━━━━━━━━━━━━━ <span class="c-green">ACK</span> ━━━━━━━━━━━━━━━▶  │
+     │                                        │
+<span class="c-blue">[TIME_WAIT]</span>                          <span class="c-muted">[CLOSED] ✅</span>
+     │
+<span class="c-muted">[CLOSED after ~60s] ✅</span></pre>
+      <div class="insight insight-blue">
+        <b>Client closes first:</b> Client gets TIME_WAIT (harmless). Server gets CLOSE_WAIT. This happens when your HttpClient's PooledConnectionIdleTimeout expires before server's keepalive timeout.
+      </div>
+    </div>
+
+    <div class="tab-content" id="fin-fin">
+      <pre>
+<span class="c-amber">Q: Does FIN go into the recv buffer alongside body data?</span>
+
+<span class="c-green">A: NO. FIN is a TCP control flag, not data bytes.</span>
+
+<span class="c-muted">FIN packet structure:</span>
+  IP header
+  TCP header → FIN flag = 1, <span class="c-red">len = 0</span>  ← zero data bytes
+  no payload
+
+<span class="c-muted">Recv buffer before FIN arrives:</span>
+<span class="c-muted">┌────────────────────────────────────────────────┐</span>
+<span class="c-muted">│</span> <span class="c-pink">[body byte 0..99999]</span>                           <span class="c-muted">│</span>
+<span class="c-muted">│  read_ptr=0  write_ptr=100000                  │</span>
+<span class="c-muted">└────────────────────────────────────────────────┘</span>
+
+<span class="c-muted">Recv buffer AFTER FIN arrives:</span>
+<span class="c-muted">┌────────────────────────────────────────────────┐</span>
+<span class="c-muted">│</span> <span class="c-pink">[body byte 0..99999]</span> <span class="c-amber">[EOF]</span>                    <span class="c-muted">│</span>
+<span class="c-muted">│  UNCHANGED — same bytes + virtual EOF marker   │</span>
+<span class="c-muted">└────────────────────────────────────────────────┘</span>
+
+<span class="c-green">EOF = not real bytes. Virtual marker placed by kernel.</span>
+<span class="c-green">Kernel also IMMEDIATELY sends ACK — no app needed.</span>
+<span class="c-green">TCP state moves to CLOSE_WAIT automatically.</span>
+<span class="c-muted">App has NO idea. Still blocked on await.</span></pre>
+      <div class="insight insight-green">
+        <b>FIN processing is 100% kernel.</b> Kernel receives FIN → places EOF marker in recv buffer → sends ACK immediately → changes TCP state to CLOSE_WAIT. Your app wakes up only when it reads to the EOF marker.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: FIN_WAIT 1 & 2
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-finwait">
+  <div class="page-header">
+    <span class="eyebrow">// the closer's states</span>
+    <h2 style="background:linear-gradient(135deg,var(--amber),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">FIN_WAIT_1 & FIN_WAIT_2</h2>
+    <p>These states only appear on the side that closes FIRST. They are the normal, expected sequence for the closer.</p>
+  </div>
+
+  <div class="stepper">
+    <div class="stepper-header">
+      <div class="step-tab active" onclick="switchStepTab('fw',0)">FIN_WAIT_1</div>
+      <div class="step-tab" onclick="switchStepTab('fw',1)">FIN_WAIT_2</div>
+      <div class="step-tab" onclick="switchStepTab('fw',2)">Can they get stuck?</div>
+      <div class="step-tab" onclick="switchStepTab('fw',3)">Server closes first</div>
+    </div>
+    <div class="stepper-body">
+      <div id="fw-0">
+        <pre>
+<span class="c-amber">FIN_WAIT_1</span>
+
+How you enter:  You called close() / Dispose() → kernel sent FIN
+What it means:  "I sent goodbye — waiting for their ACK"
+Can receive:    <span class="c-green">YES</span> — connection is half-closed, other side can still send
+Waiting for:    ACK of your FIN → then moves to FIN_WAIT_2
+Duration:       Usually <span class="c-green">milliseconds</span>
+
+Stuck scenario: Remote crashed before sending ACK
+                TCP retransmits FIN automatically
+                Eventually times out → CLOSED
+
+<span class="c-muted">netstat shows:</span>
+  tcp  client:54321  server:443  <span class="c-amber">FIN_WAIT1</span>  ← client sent FIN, waiting ACK</pre>
+      </div>
+      <div id="fw-1" style="display:none">
+        <pre>
+<span class="c-orange">FIN_WAIT_2</span>
+
+How you enter:  Were in FIN_WAIT_1, remote sent ACK for your FIN
+What it means:  "They acknowledged my goodbye — waiting for THEIR goodbye"
+Can receive:    <span class="c-green">YES</span> — still half open, remote can send data
+Waiting for:    Remote's FIN → send ACK → move to TIME_WAIT
+Duration:       Depends on remote application
+
+<span class="c-red">Stuck scenario:</span>  Remote sent ACK but never calls close()
+                On Linux: tcp_fin_timeout = 60s → kernel forces close
+                On Windows: can stay MUCH longer ⚠️
+
+<span class="c-muted">netstat shows:</span>
+  tcp  client:54321  server:443  <span class="c-orange">FIN_WAIT2</span>
+  tcp  server:443  client:54321  <span class="c-red">CLOSE_WAIT</span>  ← server stuck meanwhile</pre>
+      </div>
+      <div id="fw-2" style="display:none">
+        <pre>
+<span class="c-amber">FIN_WAIT_1 stuck?</span>  Rare — means remote not ACKing
+  Cause:    network issue / remote crashed
+  Fix:      TCP retransmits automatically, eventually times out
+
+<span class="c-orange">FIN_WAIT_2 stuck?</span>  Possible — remote never calls close()
+  Cause:    remote app bug — got ACK but never disposes
+  Fix:      Linux auto-closes after tcp_fin_timeout (60s)
+            Windows: configure tcp_fin_timeout manually
+
+<span class="c-red">CLOSE_WAIT stuck?</span>  Most dangerous — YOUR app never calls close()
+  Cause:    missing using/Dispose in YOUR code
+  Fix:      fix your code — NEVER auto-closes on its own
+
+<span class="c-muted">Rule: FIN_WAIT_1/2 are transient (milliseconds to seconds)</span>
+<span class="c-muted">      CLOSE_WAIT is permanent until app calls Dispose()</span></pre>
+      </div>
+      <div id="fw-3" style="display:none">
+        <pre>
+<span class="c-muted">When server closes first — WHO gets WHAT state:</span>
+
+            CLIENT          SERVER
+            ──────          ──────
+Step 1:     ESTABLISHED     FIN_WAIT_1   ← server sent FIN
+Step 2:     CLOSE_WAIT      FIN_WAIT_2   ← client ACKed
+Step 3:     LAST_ACK        TIME_WAIT    ← client sent FIN
+Step 4:     CLOSED          TIME_WAIT    ← 60s then CLOSED
+
+<span class="c-amber">Server gets:  FIN_WAIT_1 → FIN_WAIT_2 → TIME_WAIT</span>
+<span class="c-red">Client gets:  CLOSE_WAIT → LAST_ACK → CLOSED</span>
+
+<span class="c-green">TIME_WAIT (server): harmless — 60s then gone ✅</span>
+<span class="c-red">CLOSE_WAIT (client): dangerous — stuck if no Dispose() ❌</span>
+
+<span class="c-muted">In .NET with Kestrel:</span>
+  Kestrel keepalive = 120s
+  Your client idle timeout should be &lt; 120s (e.g. 90s)
+  Client closes first → Client gets TIME_WAIT (harmless)
+  Server gets CLOSE_WAIT briefly then closes cleanly ✅</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: CLOSE_WAIT
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-closewait">
+  <div class="page-header">
+    <span class="eyebrow">// the danger state</span>
+    <h2 style="background:linear-gradient(135deg,var(--red),var(--pink));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">CLOSE_WAIT</h2>
+    <p>The zombie state. Not idle, not active. Consuming resources and doing nothing. Only your code can fix it.</p>
+  </div>
+
+  <div class="three-col">
+    <div class="card" style="border-color:rgba(0,229,160,.2)">
+      <div class="card-title" style="color:var(--green)">Is it IDLE?</div>
+      <pre style="font-size:.72rem;">
+Idle = ready to work
+       just waiting
+
+CLOSE_WAIT:
+<span class="c-red">NOT ready to work</span>
+<span class="c-red">Cannot be reused</span>
+<span class="c-red">Not truly idle</span></pre>
+    </div>
+    <div class="card" style="border-color:rgba(239,68,68,.2)">
+      <div class="card-title" style="color:var(--red)">Is it ACTIVE?</div>
+      <pre style="font-size:.72rem;">
+Active = data flowing
+         doing work
+
+CLOSE_WAIT:
+<span class="c-red">No data flowing</span>
+<span class="c-red">Nothing useful</span>
+<span class="c-red">Not active</span></pre>
+    </div>
+    <div class="card" style="border-color:rgba(245,158,11,.2)">
+      <div class="card-title" style="color:var(--amber)">It is a ZOMBIE</div>
+      <pre style="font-size:.72rem;">
+<span class="c-amber">Looks alive</span> (socket exists)
+<span class="c-amber">Has a port</span> (fd allocated)
+<span class="c-red">Cannot send</span> (server gone)
+<span class="c-red">Cannot recv</span> (server closed)
+<span class="c-red">Not in pool</span> (unusable)
+<span class="c-red">Wasting</span> port+mem+fd</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--red)"></div>WHAT EACH CLOSE_WAIT CONSUMES</div>
+    <div class="two-col" style="margin:0;">
+      <pre>
+<span class="c-red">FILE DESCRIPTOR</span>
+  OS limit ~65535 per process
+  Each CLOSE_WAIT uses 1
+  Too many → "too many open files" 💥
+
+<span class="c-red">PORT NUMBER</span>
+  Range ~28000-65535
+  Each socket holds 1 port
+  Too many → port exhaustion
+  New connections fail 💥</pre>
+      <pre>
+<span class="c-red">MEMORY</span>
+  ~8KB send buf + ~87KB recv buf
+  100 sockets  = ~9MB wasted
+  10000 sockets = ~900MB 💥
+
+<span class="c-red">KERNEL TRACKING</span>
+  OS tracks every socket
+  More sockets = kernel overhead
+  Slows ALL network operations 💥</pre>
+    </div>
+  </div>
+
+  <div class="insight insight-red">
+    <b>CLOSE_WAIT count rule:</b> 0–10 = transient, acceptable. &gt;20 growing = warning. &gt;100 or continuously growing = critical bug in your code. <span class="tag tag-red">netstat -an | findstr CLOSE_WAIT</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: KEEP-ALIVE & DRAIN
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-keepalive">
+  <div class="page-header">
+    <span class="eyebrow">// http/1.1 keep-alive</span>
+    <h2 style="background:linear-gradient(135deg,var(--green),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Keep-Alive & Buffer Drain</h2>
+    <p>Keep-alive reuses the same socket. Same socket = same recv buffer. The buffer must be empty before the next response arrives.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--green)"></div>WHY DRAIN IS MANDATORY</div>
+    <pre>
+<span class="c-green">Keep-alive  →  same socket reused for all requests
+Same socket →  same recv buffer
+Same buffer →  ONE continuous byte stream</span>
+
+<span class="c-muted">Request 1 response → goes into recv buffer</span>
+<span class="c-muted">Request 2 response → goes into SAME recv buffer</span>
+
+<span class="c-amber">They CANNOT overlap. Buffer must be empty between requests.</span>
+
+<span class="c-red">If Resp1 body not drained before Req2 response arrives:</span>
+
+  recv buffer:
+  <span class="c-pink">┌────────────────────────────┬──────────────────┐</span>
+  <span class="c-pink">│ RESP1 body (stuck 100KB)   │ RESP2 bytes ???  │</span>
+  <span class="c-pink">└────────────────────────────┴──────────────────┘</span>
+
+  HTTP parser reads Resp1 body bytes thinking they are Resp2
+  <span class="c-red">CORRUPT DATA 💥</span>
+  OR buffer fills → WINDOW=0 → server pauses → DEADLOCK 💥</pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--cyan)"></div>RING BUFFER MECHANICS</div>
+    <pre>
+recv buffer is a ring buffer in kernel:
+
+  <span class="c-green">write_ptr</span> = where kernel writes new arriving bytes
+  <span class="c-amber">read_ptr</span>  = where app reads from
+  <span class="c-muted">free space = total - (write_ptr - read_ptr)</span>
+
+HEALTHY — body drained:
+  <span class="c-muted">┌──────────────────────────────────────────┐</span>
+  <span class="c-muted">│  [                  free               ] │</span>
+  <span class="c-muted">│   ↑ read_ptr = write_ptr                 │</span>
+  <span class="c-muted">└──────────────────────────────────────────┘</span>
+  <span class="c-green">Req2 response fills from beginning ✅</span>
+
+BROKEN — body NOT drained:
+  <span class="c-muted">┌──────────────────────────────────────────┐</span>
+  <span class="c-red">│  [resp1 body 100KB stuck   |  free     ] │</span>
+  <span class="c-muted">│   ↑ read_ptr never moved   ↑ write_ptr   │</span>
+  <span class="c-muted">└──────────────────────────────────────────┘</span>
+  <span class="c-red">Req2 bytes pile in after Resp1 body — CORRUPT ❌</span></pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--amber)"></div>TCP WINDOW = BACKPRESSURE</div>
+    <pre>
+Normal:
+  recv buf free = 87KB
+  TCP tells server: <span class="c-green">WINDOW = 87KB</span>  "send up to 87KB"
+  Server sends data...
+
+Buffer fills up:
+  recv buf free = 0
+  TCP tells server: <span class="c-red">WINDOW = 0</span>  "STOP! no room"
+  Server PAUSES ⏸
+
+App reads 50KB:
+  recv buf free = 50KB
+  TCP tells server: <span class="c-amber">WINDOW = 50KB</span>  "resume, 50KB free"
+  Server resumes ▶
+
+<span class="c-red">If app never reads → WINDOW stays 0 → server frozen
+You try to send Req2 → server is frozen waiting for window
+DEADLOCK — neither side makes progress 💀</span></pre>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: ResponseHeadersRead
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-headersread">
+  <div class="page-header">
+    <span class="eyebrow">// httpclient behavior</span>
+    <h2 style="background:linear-gradient(135deg,var(--blue),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">ResponseHeadersRead</h2>
+    <p>The completion option that changes when .NET returns to you — and why it makes the drain problem visible.</p>
+  </div>
+
+  <div class="compare">
+    <div class="compare-card good">
+      <div class="compare-head">✅ ResponseContentRead (default)</div>
+      <div class="compare-body">
+        <pre style="font-size:.7rem;background:transparent;border:none;padding:0;">
+<span class="c-muted">// default behavior</span>
+var r = await client.GetAsync(url);
+<span class="c-muted">// .NET waits until ENTIRE body
+// is buffered in memory
+// THEN returns to you</span>
+
+recv buf: <span class="c-green">[empty — already drained ✅]</span>
+
+Connection reusable immediately ✅
+Small body (&lt;85KB) auto-buffered ✅
+"Accidentally safe" even without using</pre>
+      </div>
+    </div>
+    <div class="compare-card bad">
+      <div class="compare-head">⚠️ ResponseHeadersRead</div>
+      <div class="compare-body">
+        <pre style="font-size:.7rem;background:transparent;border:none;padding:0;">
+<span class="c-muted">// streaming mode</span>
+var r = await client.GetAsync(url,
+  HttpCompletionOption.ResponseHeadersRead);
+<span class="c-muted">// returns as soon as HEADERS arrive
+// body still in recv buffer</span>
+
+recv buf: <span class="c-red">[body bytes still arriving ❌]</span>
+
+YOU must drain or dispose ❌
+Without using → connection broken ❌
+Large body → WINDOW=0 → deadlock ❌</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--amber)"></div>KESTREL BUFFER SIZE EFFECT</div>
+    <pre>
+Kestrel default MaxResponseBufferSize = <span class="c-amber">64KB</span>
+
+Response &lt; 64KB:
+  Kestrel buffers ENTIRE response before sending
+  Client recv buf gets headers + body at once
+  ResponseContentRead: body already buffered → safe ✅
+  ResponseHeadersRead: body arrives instantly anyway → "accidentally safe" ⚠️
+  <span class="c-muted">→ This is why your 199 byte test showed reuse without using!</span>
+
+Response &gt; 64KB:
+  Kestrel STREAMS in chunks
+  Client recv buf fills gradually
+  ResponseHeadersRead: body genuinely in flight ❌
+  Not disposing → WINDOW=0 → new connection every request ❌
+
+<span class="c-amber">Never rely on accidental safety. Always use `using`.</span></pre>
+  </div>
+
+  <div class="insight insight-amber">
+    <b>Why your production bug was hidden:</b> Your responses were small enough to be auto-buffered by Kestrel AND auto-drained by ResponseContentRead. The bug only surfaces with large responses, ResponseHeadersRead, streaming endpoints, or exceptions thrown mid-stream.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: DISPOSE & FIN
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-dispose">
+  <div class="page-header">
+    <span class="eyebrow">// the chain</span>
+    <h2 style="background:linear-gradient(135deg,var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Dispose() & FIN</h2>
+    <p>Dispose() does not send FIN directly. It drains the buffer, then tells the kernel, and the kernel sends FIN.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--purple)"></div>THE EXACT CHAIN</div>
+    <pre>
+<span class="c-red">❌ WRONG mental model:</span>
+  app reads EOF → FIN sent
+
+<span class="c-green">✅ CORRECT mental model:</span>
+  Dispose() → kernel → FIN sent
+
+<span class="c-purple">Step by step:</span>
+
+  using var response = await client.GetAsync(url,
+    HttpCompletionOption.ResponseHeadersRead);
+  var body = await response.Content.ReadAsStringAsync();
+  <span class="c-muted">// reading body drains recv buf...</span>
+  <span class="c-muted">// hits EOF marker (placed by kernel when FIN arrived)</span>
+  <span class="c-muted">// ReadAsStringAsync() returns complete string to you</span>
+  <span class="c-muted">// recv buf: empty ✅</span>
+
+  <span class="c-muted">// using block ends HERE ↓</span>
+  <span class="c-purple">// Dispose() called automatically</span>
+         ↓
+  <span class="c-blue">HttpConnection.Dispose()</span>
+         ↓
+  <span class="c-cyan">Socket.Shutdown(Send)</span>  <span class="c-muted">// "I'm done sending"</span>
+         ↓
+  <span class="c-amber">Kernel: tcp_close()</span>
+         ↓
+  <span class="c-red">Kernel sends FIN packet  ← NOT the app</span>
+         ↓
+  <span class="c-green">TCP state → LAST_ACK → CLOSED ✅</span></pre>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title" style="color:var(--green)">Path A — body read first</div>
+      <pre style="font-size:.7rem;">
+ReadAsStringAsync()
+  reads 100KB → EOF
+  recv buf empty ✅
+
+using ends → Dispose()
+  recv buf: already empty
+  Dispose() → kernel
+  kernel sends FIN immediately ✅
+  CLOSE_WAIT: microseconds</pre>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--amber)">Path B — Dispose() without reading</div>
+      <pre style="font-size:.7rem;">
+Body NOT read
+  recv buf has 100KB
+
+using ends → Dispose()
+  Dispose() internally reads
+  and DISCARDS 100KB
+  recv buf: drained ✅
+  kernel sends FIN ✅
+  CLOSE_WAIT: brief ✅
+
+<span class="c-muted">Body lost but conn clean</span></pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--amber)"></div>DOES EOF TRIGGER FIN? — NO</div>
+    <pre>
+<span class="c-muted">// Proof:</span>
+var body = await response.Content.ReadAsStringAsync();
+<span class="c-muted">// ^ EOF seen here — body complete</span>
+<span class="c-muted">// FIN NOT sent yet!</span>
+
+await Task.Delay(30_000); <span class="c-muted">// 30 seconds pass</span>
+<span class="c-muted">// still CLOSE_WAIT — still no FIN</span>
+
+response.Dispose(); <span class="c-muted">// NOW FIN is sent</span>
+<span class="c-green">// ^ Dispose() is the trigger — not EOF</span>
+
+<span class="c-amber">EOF is just a signal to your app:
+"server has no more data to send"
+It does NOT cause any TCP action.</span></pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--cyan)"></div>WHO DOES WHAT</div>
+    <table class="rule-table">
+      <thead><tr><th>Action</th><th>App</th><th>Kernel</th></tr></thead>
+      <tbody>
+        <tr><td>Read body bytes</td><td><span class="tag tag-green">✅ YES</span></td><td>serves from recv buf</td></tr>
+        <tr><td>See EOF</td><td><span class="tag tag-green">✅ YES</span></td><td>placed EOF marker</td></tr>
+        <tr><td>Call Dispose()</td><td><span class="tag tag-green">✅ YES</span></td><td>—</td></tr>
+        <tr><td>Send FIN packet</td><td><span class="tag tag-red">❌ NEVER</span></td><td><span class="tag tag-green">✅ ONLY kernel</span></td></tr>
+        <tr><td>Send ACK</td><td><span class="tag tag-red">❌ NEVER</span></td><td><span class="tag tag-green">✅ ONLY kernel</span></td></tr>
+        <tr><td>Manage seq numbers</td><td><span class="tag tag-red">❌ NEVER</span></td><td><span class="tag tag-green">✅ ONLY kernel</span></td></tr>
+        <tr><td>Drain recv buf</td><td><span class="tag tag-green">✅ ReadAsync</span></td><td>or Dispose() drains</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: LIVE SIMULATOR
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-sim">
+  <div class="page-header">
+    <span class="eyebrow">// interactive simulator</span>
+    <h2 style="background:linear-gradient(135deg,var(--cyan),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Buffer Simulator</h2>
+    <p>Simulate sending 2 requests and see exactly what happens in both client and server buffers.</p>
+  </div>
+
+  <div class="sim-container">
+    <div class="sim-actors">
+      <div class="sim-actor" id="sim-client" style="border-color:rgba(167,139,250,.3)">
+        <div class="sim-actor-title" style="color:var(--purple)">💻 CLIENT</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:.5rem">TCP state: <span id="sim-client-state" style="color:var(--green);font-weight:700">ESTABLISHED</span></div>
+        <div class="buf-wrap">
+          <div class="buf-label"><span style="color:var(--amber)">SEND BUF</span><span id="sim-csend-pct">empty</span></div>
+          <div class="buf-bar" id="sim-csend"><div class="buf-seg seg-empty">empty</div></div>
+        </div>
+        <div class="buf-wrap" style="margin-top:.5rem">
+          <div class="buf-label"><span style="color:var(--green)">RECV BUF</span><span id="sim-crecv-pct">empty</span></div>
+          <div class="buf-bar" id="sim-crecv"><div class="buf-seg seg-empty">empty</div></div>
+        </div>
+      </div>
+
+      <div class="sim-wire">
+        <div class="wire-pkt pkt-req" id="wp-req1">REQ1→</div>
+        <div class="wire-arrow">↕</div>
+        <div class="wire-pkt pkt-resp" id="wp-resp1">←RESP1</div>
+        <div class="wire-arrow">↕</div>
+        <div class="wire-pkt pkt-req" id="wp-req2">REQ2→</div>
+        <div class="wire-arrow">↕</div>
+        <div class="wire-pkt pkt-resp" id="wp-resp2">←RESP2</div>
+        <div class="wire-arrow">↕</div>
+        <div class="wire-pkt pkt-fin" id="wp-fin">←FIN</div>
+        <div class="wire-pkt pkt-ack" id="wp-ack">ACK→</div>
+      </div>
+
+      <div class="sim-actor" id="sim-server" style="border-color:rgba(16,185,129,.3)">
+        <div class="sim-actor-title" style="color:var(--green)">🖥️ SERVER (Kestrel)</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:.5rem">TCP state: <span id="sim-server-state" style="color:var(--green);font-weight:700">ESTABLISHED</span></div>
+        <div class="buf-wrap">
+          <div class="buf-label"><span style="color:var(--green)">RECV BUF</span><span id="sim-srecv-pct">empty</span></div>
+          <div class="buf-bar" id="sim-srecv"><div class="buf-seg seg-empty">empty</div></div>
+        </div>
+        <div class="buf-wrap" style="margin-top:.5rem">
+          <div class="buf-label"><span style="color:var(--amber)">SEND BUF</span><span id="sim-ssend-pct">empty</span></div>
+          <div class="buf-bar" id="sim-ssend"><div class="buf-seg seg-empty">empty</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- scenario selector -->
+    <div class="sim-controls" id="sim-scenario-btns">
+      <button class="sim-btn active" id="btn-good" onclick="simChoose('good')">✅ With using (good path)</button>
+      <button class="sim-btn danger" id="btn-bad"  onclick="simChoose('bad')">❌ Without using (bad path)</button>
+    </div>
+
+    <!-- step controls — shown after scenario chosen -->
+    <div id="sim-step-controls" style="display:none;margin-top:.75rem;">
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+        <button class="sim-btn" id="btn-prev" onclick="simStep(-1)" disabled>◀ Prev</button>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--muted)">
+          Step <span id="sim-step-cur" style="color:var(--green);font-weight:700">0</span>
+          of <span id="sim-step-tot">0</span>
+        </span>
+        <button class="sim-btn active" id="btn-next" onclick="simStep(1)">Next ▶</button>
+        <button class="sim-btn" onclick="simReset()" style="margin-left:.25rem">↺ Reset</button>
+      </div>
+      <!-- progress dots -->
+      <div id="sim-progress" style="display:flex;gap:4px;margin-top:.6rem;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- current step description -->
+    <div id="sim-step-desc" style="display:none;
+         background:rgba(0,0,0,.3);border:1px solid var(--border);
+         border-radius:8px;padding:.7rem 1rem;margin-top:.75rem;
+         font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:1.8;">
+    </div>
+
+    <div class="sim-log" id="sim-log" style="margin-top:.6rem;"><span class="log-muted">// choose a scenario above to begin — then use Next ▶ to step through</span></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: RULES & CHEATSHEET
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-rules">
+  <div class="page-header">
+    <span class="eyebrow">// quick reference</span>
+    <h2 style="background:linear-gradient(135deg,var(--amber),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Rules & Cheatsheet</h2>
+    <p>Everything distilled into rules you can remember and apply immediately.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="dot" style="background:var(--green)"></div>THE 6 RULES</div>
+    <table class="rule-table">
+      <thead><tr><th>#</th><th>Rule</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="tag tag-cyan">1</span></td>
+          <td><b>Send buffer drains automatically</b><br><small style="color:var(--muted)">TCP owns it. You never touch it.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">Kernel manages segments, ACKs, retransmits</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-red">2</span></td>
+          <td><b>Recv buffer does NOT drain automatically</b><br><small style="color:var(--muted)">Your app MUST read it.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">If full → WINDOW=0 → server pauses → deadlock</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-amber">3</span></td>
+          <td><b>HTTP/1.1 is strictly sequential</b><br><small style="color:var(--muted)">One byte stream, no labels.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">Resp1 body + Resp2 bytes = corruption. Must drain between requests.</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-green">4</span></td>
+          <td><b>Dispose() drains recv buf for you</b><br><small style="color:var(--muted)">using block = guaranteed drain.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">Internally reads and discards remaining bytes before returning conn to pool</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-blue">5</span></td>
+          <td><b>FIN is never in the recv buffer</b><br><small style="color:var(--muted)">Kernel handles FIN, places EOF marker.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">FIN has len=0. Kernel ACKs it immediately. App sees EOF when it reads to end.</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-purple">6</span></td>
+          <td><b>Dispose() → kernel → FIN sent</b><br><small style="color:var(--muted)">EOF does NOT send FIN. Dispose() does.</small></td>
+          <td style="color:var(--muted);font-size:.75rem">Only when app signals "done sending" does kernel send FIN</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cheatsheet-grid">
+    <div class="cheat-card" style="border-color:rgba(0,229,160,.2)">
+      <h4 style="color:var(--green)">✅ ALWAYS DO</h4>
+      <ul>
+        <li>using var response = ...</li>
+        <li>Read body inside using block</li>
+        <li>Client timeout &lt; Kestrel timeout</li>
+        <li>Configure SocketsHttpHandler</li>
+        <li>Use IHttpClientFactory</li>
+      </ul>
+    </div>
+    <div class="cheat-card" style="border-color:rgba(239,68,68,.2)">
+      <h4 style="color:var(--red)">❌ NEVER DO</h4>
+      <ul>
+        <li>using var client = new HttpClient()</li>
+        <li>Ignore response body</li>
+        <li>No finally block on response</li>
+        <li>new HttpClient() per request</li>
+        <li>Rely on GC to close sockets</li>
+      </ul>
+    </div>
+    <div class="cheat-card" style="border-color:rgba(59,130,246,.2)">
+      <h4 style="color:var(--blue)">🔧 KESTREL CONFIG</h4>
+      <ul>
+        <li>KeepAliveTimeout: 120s</li>
+        <li>MaxResponseBufferSize: 64KB</li>
+        <li>Client IdleTimeout: &lt;120s</li>
+        <li>KeepAlivePingDelay: 30s</li>
+        <li>PooledConnectionLifetime: 2m</li>
+      </ul>
+    </div>
+    <div class="cheat-card" style="border-color:rgba(245,158,11,.2)">
+      <h4 style="color:var(--amber)">📊 MONITOR</h4>
+      <ul>
+        <li>CLOSE_WAIT should be ~0</li>
+        <li>&gt;20 growing = warning</li>
+        <li>&gt;100 = critical bug</li>
+        <li>netstat -an | findstr CLOSE_WAIT</li>
+        <li>IPGlobalProperties in .NET</li>
+      </ul>
+    </div>
+    <div class="cheat-card" style="border-color:rgba(167,139,250,.2)">
+      <h4 style="color:var(--purple)">⚡ HTTP PORTS</h4>
+      <ul>
+        <li>HTTP = port 80 (plain text)</li>
+        <li>HTTPS = port 443 (TLS)</li>
+        <li>Buffers same on both ports</li>
+        <li>CLOSE_WAIT same on both</li>
+        <li>TLS adds close_notify before FIN</li>
+      </ul>
+    </div>
+    <div class="cheat-card" style="border-color:rgba(6,182,212,.2)">
+      <h4 style="color:var(--cyan)">🧠 MENTAL MODELS</h4>
+      <ul>
+        <li>Socket = 4-tuple not port</li>
+        <li>CLOSE_WAIT = zombie socket</li>
+        <li>FIN = control flag, not data</li>
+        <li>EOF = marker, not FIN trigger</li>
+        <li>Dispose() = "I'm done" signal</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION: QUIZ
+══════════════════════════════════════════════ -->
+<div class="section" id="sec-quiz">
+  <div class="page-header">
+    <span class="eyebrow">// test your knowledge</span>
+    <h2 style="background:linear-gradient(135deg,var(--pink),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Quiz Yourself</h2>
+    <p>10 questions covering everything from today's session. Answer all to see your score.</p>
+  </div>
+  <div id="quiz-container"></div>
+  <div id="quiz-score" style="display:none" class="quiz-score"></div>
+</div>
+
+</main>
+</div><!-- end shell -->
+
+<script>
+// ── NAV ───────────────────────────────────────────────────
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+  window.scrollTo(0,0);
+}
+
+// ── TABS ──────────────────────────────────────────────────
+function switchTab(groupId, targetId) {
+  const group = document.getElementById(groupId);
+  group.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  group.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(targetId).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── STEPPER TABS ──────────────────────────────────────────
+function switchStepTab(prefix, idx) {
+  const tabs = document.querySelectorAll('.step-tab');
+  const ids = [prefix+'-0',prefix+'-1',prefix+'-2',prefix+'-3'];
+  tabs.forEach((t,i) => t.classList.toggle('active', i===idx));
+  ids.forEach((id,i) => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = i===idx ? 'block' : 'none';
+  });
+}
+
+// ── TCP STATES DATA ───────────────────────────────────────
+const tcpStates = [
+  { name:'ESTABLISHED', color:'#00e5a0', who:'Both sides', risk:'None ✅',
+    desc:'Connection fully open. Data flows in both directions. Normal active state. What your pool connections sit in.',
+    extra:'This is the healthy state. ESTABLISHED in netstat = working connection.' },
+  { name:'FIN_WAIT_1', color:'#f59e0b', who:'Closer (sends FIN first)', risk:'Rare',
+    desc:'Sent FIN, waiting for ACK. "I said goodbye, waiting for confirmation."',
+    extra:'Usually lasts milliseconds. Stuck = remote not ACKing. TCP retransmits automatically.' },
+  { name:'FIN_WAIT_2', color:'#f97316', who:'Closer', risk:'Possible ⚠️',
+    desc:'FIN was ACKed. Now waiting for remote to send its FIN. Half-closed.',
+    extra:'Duration depends on remote app. Linux auto-closes after tcp_fin_timeout (60s).' },
+  { name:'CLOSE_WAIT', color:'#ef4444', who:'Receiver of FIN', risk:'HIGH ❌ if stuck',
+    desc:'Received remote FIN, sent ACK. Waiting for YOUR app to call close(). DANGER ZONE.',
+    extra:'Never auto-closes. YOUR app must call Dispose(). Stuck = socket leak.' },
+  { name:'LAST_ACK', color:'#a78bfa', who:'Receiver of FIN (after close)', risk:'None ✅',
+    desc:'App called close(), sent FIN. Waiting for final ACK from remote.',
+    extra:'Very transient. Once ACK arrives → CLOSED. Port and buffers freed.' },
+  { name:'TIME_WAIT', color:'#3b82f6', who:'Closer (after full close)', risk:'None ✅',
+    desc:'Both FINs exchanged. Waiting 2×MSL (~60s) for safety then CLOSED.',
+    extra:'Harmless. Many TIME_WAIT on server = high traffic = normal. Goes away on its own.' },
+  { name:'CLOSED', color:'#6b7280', who:'Both (final)', risk:'None ✅',
+    desc:'Socket fully closed. Port freed. Buffers freed. Clean.',
+    extra:'Not visible in netstat — entry removed. Port available for new connections.' },
+  { name:'LISTEN', color:'#06b6d4', who:'Server only', risk:'None ✅',
+    desc:'Server waiting for incoming connections on this port.',
+    extra:'Kestrel port 443 sits here. Accept queue fills when connections arrive.' },
+  { name:'SYN_SENT', color:'#38bdf8', who:'Client', risk:'None',
+    desc:'Client sent SYN, waiting for SYN-ACK. Start of handshake.',
+    extra:'Very brief. If stuck = server not responding or firewall dropping.' },
+  { name:'SYN_RCVD', color:'#818cf8', who:'Server', risk:'None',
+    desc:'Server got SYN, sent SYN-ACK, waiting for ACK. Server side of handshake.',
+    extra:'SYN flood attacks fill this queue. syn cookies protect against it.' },
+];
+
+function buildStateGrid() {
+  const grid = document.getElementById('stateGrid');
+  tcpStates.forEach((s,i) => {
+    const card = document.createElement('div');
+    card.className = 'state-card';
+    card.style.borderColor = s.color + '44';
+    card.innerHTML = `
+      <div class="state-name" style="color:${s.color}">${s.name}</div>
+      <div class="state-who">${s.who}</div>
+      <div class="state-desc">${s.desc}</div>
+      <div class="state-risk" style="color:${s.risk.includes('❌')?'#ef4444':s.risk.includes('⚠️')?'#f59e0b':'#00e5a0'}">${s.risk}</div>
+    `;
+    card.onclick = () => showStateDetail(s, card);
+    grid.appendChild(card);
+  });
+}
+
+function showStateDetail(s, card) {
+  document.querySelectorAll('.state-card').forEach(c => {
+    c.classList.remove('active-state');
+    c.style.boxShadow = '';
+  });
+  card.classList.add('active-state');
+  card.style.borderColor = s.color;
+  card.style.boxShadow = `0 0 20px ${s.color}33`;
+
+  const detail = document.getElementById('stateDetail');
+  detail.style.display = 'block';
+  detail.style.borderColor = s.color + '66';
+  detail.innerHTML = `
+    <div class="card-title"><div class="dot" style="background:${s.color}"></div>${s.name} — Deep Dive</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.4rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em">WHO</div>
+        <div style="font-size:.85rem;">${s.who}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin:.75rem 0 .4rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em">MEANING</div>
+        <div style="font-size:.85rem;">${s.desc}</div>
+      </div>
+      <div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.4rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em">DETAILS</div>
+        <div style="font-size:.82rem;color:var(--muted);line-height:1.7;">${s.extra}</div>
+        <div style="margin-top:.75rem;font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:700;color:${s.risk.includes('❌')?'#ef4444':s.risk.includes('⚠️')?'#f59e0b':'#00e5a0'}">RISK: ${s.risk}</div>
+      </div>
+    </div>
+  `;
+  detail.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// ── SIMULATOR — STEP BASED ────────────────────────────────
+let simScenarioType = null;
+let simSteps        = [];
+let simCurrent      = -1;
+
+// ── Buffer segment map ─────────────────────────────────────
+const BUF = {
+  empty       : '<div class="buf-seg seg-empty">empty</div>',
+  req1        : '<div class="buf-seg seg-req1"  style="width:15%">REQ1</div><div class="buf-seg seg-empty">free</div>',
+  req2        : '<div class="buf-seg seg-req2"  style="width:15%">REQ2</div><div class="buf-seg seg-empty">free</div>',
+  resp1       : '<div class="buf-seg seg-resp1" style="width:65%">RESP1 headers+body</div><div class="buf-seg seg-empty">free</div>',
+  resp2       : '<div class="buf-seg seg-resp2" style="width:20%">RESP2</div><div class="buf-seg seg-empty">free</div>',
+  stuck       : '<div class="buf-seg seg-stuck" style="width:80%">100KB STUCK ❌</div>',
+  draining    : '<div class="buf-seg seg-resp1" style="width:20%">draining…</div><div class="buf-seg seg-empty">free</div>',
+  resp1_server: '<div class="buf-seg seg-resp1" style="width:65%">RESP1 queued</div><div class="buf-seg seg-empty">free</div>',
+  resp2_server: '<div class="buf-seg seg-resp2" style="width:20%">RESP2</div><div class="buf-seg seg-empty">free</div>',
+};
+
+// ── Step definition schema ─────────────────────────────────
+// Each step: { title, desc, color, pkts, client, server, logs }
+//   pkts:   array of packet IDs to show (rest hidden)
+//   client: { csend, csend_lbl, crecv, crecv_lbl, state, state_color }
+//   server: { srecv, srecv_lbl, ssend, ssend_lbl, state, state_color }
+//   logs:   array of { msg, cls }
+
+function buildSteps(isGood) {
+  const G = isGood;
+  return [
+    // ── 0 ────────────────────────────────────────────────
+    {
+      title: 'Initial state — connection open',
+      desc:  'TCP handshake is already done. Both sides are ESTABLISHED. Both kernel buffers are empty and ready.',
+      color: 'var(--green)',
+      pkts:  [],
+      client: { csend:'empty', csend_lbl:'empty', crecv:'empty', crecv_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'empty', ssend_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'// '+( G ? 'WITH using — good path' : 'WITHOUT using — bad path' ), cls:'muted' },
+        { msg:'Both sides ESTABLISHED. All buffers empty.', cls:'green' },
+        { msg:'Each socket has its own send buf + recv buf in kernel.', cls:'muted' },
+      ]
+    },
+    // ── 1 ────────────────────────────────────────────────
+    {
+      title: 'App writes REQ1 → client send buffer',
+      desc:  'Your .NET code calls HttpClient.SendAsync(). HTTP layer serialises the request. Bytes land in the kernel send buffer.',
+      color: 'var(--blue)',
+      pkts:  [],
+      client: { csend:'req1', csend_lbl:'REQ1 queued', crecv:'empty', crecv_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'empty', ssend_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'→ App calls SendAsync()', cls:'blue' },
+        { msg:'→ HTTP layer formats: GET /api/users HTTP/1.1', cls:'blue' },
+        { msg:'→ Bytes written into client SEND BUFFER', cls:'amber' },
+        { msg:'  [REQ1 ~200B | free…                    ]', cls:'amber' },
+        { msg:'TCP will drain this automatically — no app action needed.', cls:'muted' },
+      ]
+    },
+    // ── 2 ────────────────────────────────────────────────
+    {
+      title: 'TCP drains send buffer → REQ1 on wire → server recv buffer',
+      desc:  'TCP picks up bytes from send buffer, breaks into segments, sends to wire. Kernel on server side writes arriving bytes into server recv buffer.',
+      color: 'var(--orange)',
+      pkts:  ['wp-req1'],
+      client: { csend:'empty', csend_lbl:'drained ✅', crecv:'empty', crecv_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'req1',  srecv_lbl:'REQ1 arrived', ssend:'empty', ssend_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'→ TCP drains client send buf → segments on wire', cls:'orange' },
+        { msg:'→ Client send buf: empty (drained automatically ✅)', cls:'green' },
+        { msg:'→ REQ1 bytes arrive at server kernel recv buf', cls:'cyan' },
+        { msg:'  [REQ1 ~200B | free…                    ]', cls:'cyan' },
+        { msg:'Send buffer always drains by itself. You never touch it.', cls:'muted' },
+      ]
+    },
+    // ── 3 ────────────────────────────────────────────────
+    {
+      title: 'Kestrel reads server recv buffer → runs handler',
+      desc:  'Kestrel reads bytes from its recv buffer, HTTP layer parses the request, routes to your controller. Recv buffer drains.',
+      color: 'var(--cyan)',
+      pkts:  [],
+      client: { csend:'empty', csend_lbl:'empty', crecv:'empty', crecv_lbl:'awaiting…', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'empty', srecv_lbl:'Kestrel read ✅', ssend:'empty', ssend_lbl:'handler running', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'→ Kestrel reads server recv buf', cls:'cyan' },
+        { msg:'→ Server recv buf: empty ✅ (Kestrel drained it)', cls:'green' },
+        { msg:'→ HTTP layer parses: GET /api/users HTTP/1.1', cls:'cyan' },
+        { msg:'→ Routes to your MapGet() handler', cls:'cyan' },
+        { msg:'→ Handler builds JSON response… client is blocked on await', cls:'muted' },
+      ]
+    },
+    // ── 4 ────────────────────────────────────────────────
+    {
+      title: 'Handler writes RESP1 → server send buffer',
+      desc:  'Your handler calls Results.Ok(data). Kestrel serialises 100KB JSON. Bytes go into server send buffer. TCP will drain this to wire.',
+      color: 'var(--pink)',
+      pkts:  [],
+      client: { csend:'empty', csend_lbl:'empty', crecv:'empty', crecv_lbl:'awaiting…', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'resp1_server', ssend_lbl:'RESP1 100KB queued', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'→ Handler: Results.Ok(bigData) called', cls:'cyan' },
+        { msg:'→ Serialised to JSON: ~100KB', cls:'cyan' },
+        { msg:'→ Bytes written into server SEND BUFFER', cls:'amber' },
+        { msg:'  [RESP1 headers+body 100KB | free…     ]', cls:'amber' },
+        { msg:'TCP will drain this automatically — chunk by chunk.', cls:'muted' },
+      ]
+    },
+    // ── 5 ────────────────────────────────────────────────
+    {
+      title: 'TCP drains server send buffer → RESP1 on wire → client recv buffer',
+      desc:  'TCP sends RESP1 in chunks. Each chunk gets ACKed by client kernel. Bytes accumulate in client recv buffer. 100KB sits there waiting for app.',
+      color: 'var(--pink)',
+      pkts:  ['wp-resp1'],
+      client: { csend:'empty', csend_lbl:'empty', crecv:'resp1', crecv_lbl:'RESP1 100KB arrived', state:'ESTABLISHED', sc:'var(--green)' },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'empty', ssend_lbl:'drained ✅', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: [
+        { msg:'→ TCP drains server send buf → wire in chunks', cls:'orange' },
+        { msg:'→ Client kernel ACKs each chunk received', cls:'muted' },
+        { msg:'→ RESP1 bytes fill client RECV BUFFER', cls:'green' },
+        { msg:'  [RESP1 headers+body 100KB    | free…  ]', cls:'green' },
+        { msg:'→ HTTP layer reads headers → returns HttpResponseMessage', cls:'green' },
+        { msg:'→ Server send buf: fully drained ✅', cls:'green' },
+        { msg:'BODY (100KB) is still in client recv buf — waiting for app.', cls:'amber' },
+      ]
+    },
+    // ── 6 ────────────────────────────────────────────────
+    {
+      title: G ? '✅ App reads body — recv buffer drained' : '❌ App ignores body — recv buffer stays full',
+      desc:  G
+        ? 'using block is in scope. App calls ReadAsStringAsync(). Every body byte is read from recv buffer. Buffer becomes empty. Connection is reusable.'
+        : 'No using block. App reads only headers and moves on. 100KB body bytes sit untouched in recv buffer. Buffer fills up.',
+      color: G ? 'var(--green)' : 'var(--red)',
+      pkts:  [],
+      client: {
+        csend:'empty', csend_lbl:'empty',
+        crecv: G ? 'empty' : 'stuck',
+        crecv_lbl: G ? 'drained ✅' : '100KB STUCK ❌',
+        state:'ESTABLISHED', sc:'var(--green)'
+      },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'empty', ssend_lbl:'empty', state: G ? 'ESTABLISHED' : 'PAUSED WINDOW=0', sc: G ? 'var(--green)' : 'var(--red)' },
+      logs: G
+        ? [
+            { msg:'→ [using var response = …]', cls:'green' },
+            { msg:'→ App calls ReadAsStringAsync()', cls:'green' },
+            { msg:'→ Reads all 100KB from recv buf → returns string', cls:'green' },
+            { msg:'→ Client recv buf: EMPTY ✅', cls:'green' },
+            { msg:'  [               empty               ]', cls:'green' },
+            { msg:'→ TCP window stays OPEN — server can send more', cls:'green' },
+            { msg:'Connection is now FREE to be reused ♻️', cls:'green' },
+          ]
+        : [
+            { msg:'→ [NO using on response]', cls:'red' },
+            { msg:'→ App reads only status code — ignores body', cls:'red' },
+            { msg:'→ 100KB body still in recv buf!', cls:'red' },
+            { msg:'  [RESP1 BODY 100KB STUCK ❌           ]', cls:'red' },
+            { msg:'→ Recv buf fills → kernel sends WINDOW=0 to server', cls:'red' },
+            { msg:'→ Server is now PAUSED — cannot send anything', cls:'red' },
+            { msg:'HttpClient detects conn is blocked → must open new conn.', cls:'amber' },
+          ]
+    },
+    // ── 7 ────────────────────────────────────────────────
+    {
+      title: G ? 'App sends REQ2 on SAME connection ♻️' : 'HttpClient opens NEW connection ❌',
+      desc:  G
+        ? 'Recv buffer is empty. HttpClient picks the same socket from pool. REQ2 bytes go into the same send buffer. No handshake needed.'
+        : 'Old connection is blocked. HttpClient opens a brand new TCP socket (new SYN → SYN-ACK → ACK). REQ2 goes on the new connection.',
+      color: G ? 'var(--green)' : 'var(--red)',
+      pkts:  ['wp-req2'],
+      client: {
+        csend:'req2', csend_lbl: G ? 'REQ2 — same conn ♻️' : 'REQ2 — NEW conn ❌',
+        crecv: G ? 'empty' : 'stuck',
+        crecv_lbl: G ? 'empty' : '100KB STUCK ❌',
+        state:'ESTABLISHED', sc:'var(--green)'
+      },
+      server: { srecv:'req2', srecv_lbl:'REQ2 arrived', ssend:'empty', ssend_lbl:'empty', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: G
+        ? [
+            { msg:'→ HttpClient picks same socket from pool ♻️', cls:'green' },
+            { msg:'→ REQ2 bytes into client send buf', cls:'blue' },
+            { msg:'→ TCP drains → wire → server recv buf', cls:'orange' },
+            { msg:'→ Kestrel reads REQ2 — processes it', cls:'cyan' },
+            { msg:'No new handshake needed. No new port. Fast! ✅', cls:'green' },
+          ]
+        : [
+            { msg:'→ Old socket recv buf still has 100KB', cls:'red' },
+            { msg:'→ HttpClient cannot reuse blocked socket', cls:'red' },
+            { msg:'→ Opens NEW TCP socket — new port', cls:'red' },
+            { msg:'→ SYN → SYN-ACK → ACK (full handshake again)', cls:'red' },
+            { msg:'→ REQ2 goes on new connection', cls:'amber' },
+            { msg:'→ Kestrel receives REQ2 on new socket', cls:'cyan' },
+          ]
+    },
+    // ── 8 ────────────────────────────────────────────────
+    {
+      title: 'Server sends RESP2 → client recv buffer',
+      desc:  G
+        ? 'Server processes REQ2, builds RESP2. Bytes flow through server send buffer → wire → client recv buffer. ONLY RESP2 bytes — no contamination.'
+        : 'Server processes REQ2 on new connection. RESP2 arrives in new socket\'s recv buffer. Old socket recv buffer still has 100KB stuck.',
+      color: 'var(--cyan)',
+      pkts:  ['wp-resp2'],
+      client: {
+        csend:'empty', csend_lbl:'empty',
+        crecv:'resp2',
+        crecv_lbl: G ? 'RESP2 only ✅' : 'RESP2 (new conn)',
+        state:'ESTABLISHED', sc:'var(--green)'
+      },
+      server: { srecv:'empty', srecv_lbl:'Kestrel read', ssend:'empty', ssend_lbl:'drained ✅', state:'ESTABLISHED', sc:'var(--green)' },
+      logs: G
+        ? [
+            { msg:'→ Handler builds RESP2 → server send buf', cls:'cyan' },
+            { msg:'→ TCP drains → wire → client recv buf', cls:'orange' },
+            { msg:'  [RESP2 only | free…                  ]', cls:'cyan' },
+            { msg:'→ NO mixing with RESP1 bytes ✅', cls:'green' },
+            { msg:'→ HTTP parser reads cleanly', cls:'green' },
+            { msg:'App gets correct RESP2 data ✅', cls:'green' },
+          ]
+        : [
+            { msg:'→ Handler builds RESP2 on NEW connection', cls:'cyan' },
+            { msg:'→ RESP2 arrives in NEW socket recv buf', cls:'cyan' },
+            { msg:'→ OLD socket recv buf still: [100KB STUCK]', cls:'red' },
+            { msg:'→ Two sockets now exist to same server', cls:'red' },
+            { msg:'→ Old one wasting a port + memory + fd', cls:'red' },
+          ]
+    },
+    // ── 9 ────────────────────────────────────────────────
+    {
+      title: G ? '✅ DONE — connection back to pool' : '❌ Server closes old conn → CLOSE_WAIT',
+      desc:  G
+        ? 'App reads RESP2. Recv buffer empty. Connection returned to pool. Ready for REQ3, REQ4, ... No CLOSE_WAIT anywhere.'
+        : 'Server eventually closes the old frozen connection by sending FIN. Client kernel auto-ACKs. Client enters CLOSE_WAIT. Nobody ever calls Dispose() on old response — socket leaks forever.',
+      color: G ? 'var(--green)' : 'var(--red)',
+      pkts:  G ? [] : ['wp-fin'],
+      client: {
+        csend:'empty', csend_lbl:'empty',
+        crecv: G ? 'empty' : 'stuck',
+        crecv_lbl: G ? 'empty ✅' : 'stuck forever ❌',
+        state: G ? 'ESTABLISHED' : 'CLOSE_WAIT',
+        sc: G ? 'var(--green)' : 'var(--red)'
+      },
+      server: { srecv:'empty', srecv_lbl:'empty', ssend:'empty', ssend_lbl:'empty', state: G ? 'ESTABLISHED' : 'FIN_WAIT_2', sc: G ? 'var(--green)' : 'var(--orange)' },
+      logs: G
+        ? [
+            { msg:'→ App reads RESP2 body via ReadAsStringAsync()', cls:'green' },
+            { msg:'→ Client recv buf: empty ✅', cls:'green' },
+            { msg:'→ using block ends → Dispose() called', cls:'green' },
+            { msg:'→ Connection returned to pool ♻️', cls:'green' },
+            { msg:'', cls:'muted' },
+            { msg:'✅ RESULT: 1 connection reused for both requests', cls:'green' },
+            { msg:'✅ No CLOSE_WAIT. No leaked sockets. No wasted ports.', cls:'green' },
+          ]
+        : [
+            { msg:'→ Server idle timeout hits old frozen connection', cls:'amber' },
+            { msg:'→ Server sends FIN on old socket', cls:'amber' },
+            { msg:'→ Client kernel AUTO-ACKs FIN (no app needed)', cls:'amber' },
+            { msg:'→ Client TCP state: CLOSE_WAIT', cls:'red' },
+            { msg:'→ Old response never disposed — Dispose() never called', cls:'red' },
+            { msg:'→ Kernel never sends client FIN back', cls:'red' },
+            { msg:'→ Socket stuck in CLOSE_WAIT FOREVER', cls:'red' },
+            { msg:'', cls:'muted' },
+            { msg:'❌ RESULT: 2 connections used. Old socket leaks.', cls:'red' },
+            { msg:'❌ Port held. ~87KB recv buf never freed. fd wasted.', cls:'red' },
+          ]
+    },
+  ];
+}
+
+// ── Core helpers ───────────────────────────────────────────
+function setBuf(barId, pctId, type, label) {
+  const bar = document.getElementById(barId);
+  const pct = document.getElementById('sim-'+pctId+'-pct');
+  if(bar) bar.innerHTML = BUF[type] || BUF.empty;
+  if(pct) pct.textContent = label;
+}
+
+function setSimState(side, state, color) {
+  const el = document.getElementById('sim-'+side+'-state');
+  if(el) { el.textContent = state; el.style.color = color; }
+}
+
+function hideAllPackets() {
+  ['wp-req1','wp-resp1','wp-req2','wp-resp2','wp-fin','wp-ack'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.remove('show');
+  });
+}
+
+// ── Apply one step's state ─────────────────────────────────
+function applyStep(step) {
+  const s = simSteps[step];
+  if(!s) return;
+
+  // buffers
+  setBuf('sim-csend','csend', s.client.csend, s.client.csend_lbl);
+  setBuf('sim-crecv','crecv', s.client.crecv, s.client.crecv_lbl);
+  setBuf('sim-srecv','srecv', s.server.srecv, s.server.srecv_lbl);
+  setBuf('sim-ssend','ssend', s.server.ssend, s.server.ssend_lbl);
+
+  // TCP states
+  setSimState('client', s.client.state, s.client.sc);
+  setSimState('server', s.server.state, s.server.sc);
+
+  // packets on wire
+  hideAllPackets();
+  (s.pkts || []).forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add('show');
+  });
+
+  // log — show ALL logs up to current step
+  const log = document.getElementById('sim-log');
+  log.innerHTML = '';
+  for(let i = 0; i <= step; i++) {
+    if(i > 0) {
+      log.innerHTML += `<div class="log-muted" style="border-top:1px solid var(--border);margin:.3rem 0;opacity:.4"></div>`;
+    }
+    (simSteps[i].logs || []).forEach(l => {
+      log.innerHTML += `<div class="log-${l.cls||'muted'}">${l.msg}</div>`;
+    });
+  }
+  log.scrollTop = log.scrollHeight;
+
+  // step description box
+  const desc = document.getElementById('sim-step-desc');
+  desc.style.display = 'block';
+  desc.innerHTML = `<span style="color:${s.color};font-weight:700">[Step ${step+1}/${simSteps.length}]</span>  <span style="color:var(--text)">${s.title}</span><br><span style="color:var(--muted)">${s.desc}</span>`;
+
+  // progress dots
+  const prog = document.getElementById('sim-progress');
+  prog.innerHTML = '';
+  simSteps.forEach((_,i) => {
+    const dot = document.createElement('div');
+    dot.style.cssText = `width:22px;height:5px;border-radius:3px;cursor:pointer;
+      background:${i < step ? 'var(--muted)' : i === step ? s.color : 'var(--border)'};
+      transition:background .2s;`;
+    dot.title = `Step ${i+1}: ${simSteps[i].title}`;
+    dot.onclick = () => { simCurrent = i; applyStep(i); updateStepBtns(); };
+    prog.appendChild(dot);
+  });
+
+  // counter
+  document.getElementById('sim-step-cur').textContent = step + 1;
+  document.getElementById('sim-step-tot').textContent = simSteps.length;
+}
+
+function updateStepBtns() {
+  document.getElementById('btn-prev').disabled = simCurrent <= 0;
+  document.getElementById('btn-next').disabled = simCurrent >= simSteps.length - 1;
+  document.getElementById('btn-next').textContent = simCurrent >= simSteps.length - 1 ? 'Done ✓' : 'Next ▶';
+}
+
+// ── Public API ─────────────────────────────────────────────
+function simChoose(type) {
+  simScenarioType = type;
+  simSteps        = buildSteps(type === 'good');
+  simCurrent      = 0;
+
+  // highlight chosen scenario button
+  document.getElementById('btn-good').classList.toggle('active', type === 'good');
+  document.getElementById('btn-bad').classList.toggle('active', type === 'bad');
+  document.getElementById('btn-bad').classList.toggle('danger', type === 'bad');
+
+  document.getElementById('sim-step-controls').style.display = 'block';
+  applyStep(0);
+  updateStepBtns();
+}
+
+function simStep(dir) {
+  const next = simCurrent + dir;
+  if(next < 0 || next >= simSteps.length) return;
+  simCurrent = next;
+  applyStep(simCurrent);
+  updateStepBtns();
+}
+
+function simReset() {
+  simScenarioType = null;
+  simSteps        = [];
+  simCurrent      = -1;
+  setBuf('sim-csend','csend','empty','empty');
+  setBuf('sim-crecv','crecv','empty','empty');
+  setBuf('sim-srecv','srecv','empty','empty');
+  setBuf('sim-ssend','ssend','empty','empty');
+  setSimState('client','ESTABLISHED','var(--green)');
+  setSimState('server','ESTABLISHED','var(--green)');
+  hideAllPackets();
+  document.getElementById('sim-step-controls').style.display = 'none';
+  document.getElementById('sim-step-desc').style.display    = 'none';
+  document.getElementById('sim-progress').innerHTML = '';
+  document.getElementById('sim-log').innerHTML = '<span class="log-muted">// reset — choose a scenario above</span>';
+  document.getElementById('btn-good').classList.add('active');
+  document.getElementById('btn-bad').classList.remove('active');
+}
+
+// ── QUIZ ─────────────────────────────────────────────────
+const questions = [
+  {
+    q: "What happens to the recv buffer when a FIN packet arrives from the server?",
+    opts: ["FIN bytes are added at the end of the buffer", "Buffer is immediately cleared", "An EOF marker is placed; buffer data unchanged; kernel auto-ACKs", "Buffer is frozen and cannot receive more data"],
+    ans: 2,
+    explain: "FIN has len=0 — it carries no data bytes. Kernel receives it, places a virtual EOF marker in the recv buffer, sends ACK immediately (no app needed), and changes TCP state to CLOSE_WAIT. The body bytes already in the buffer are completely unchanged."
+  },
+  {
+    q: "Your app reads the response body and hits EOF. Has the FIN been sent to the server?",
+    opts: ["Yes — reading EOF triggers FIN automatically", "No — FIN is sent only when Dispose() is called", "Yes — kernel sends FIN when buffer is empty", "Maybe — depends on keep-alive setting"],
+    ans: 1,
+    explain: "EOF is just a signal to your app that the server has no more data to send. It does NOT trigger any TCP action. FIN is sent only when your app calls Dispose() (via using block), which tells the kernel to call tcp_close()."
+  },
+  {
+    q: "Why must the recv buffer be drained before sending Request 2 on a keep-alive connection?",
+    opts: ["TCP requires it for security reasons", "Same socket = same recv buffer; Resp1 body and Resp2 bytes would mix causing corruption", "Server refuses to accept new requests otherwise", "The send buffer depends on recv buffer space"],
+    ans: 1,
+    explain: "Keep-alive reuses the same socket. Same socket = same recv buffer. HTTP/1.1 is sequential with one byte stream — there are no labels separating Resp1 body from Resp2 bytes. If Resp1 body isn't drained, Resp2 bytes pile in and the HTTP parser gets corrupted data."
+  },
+  {
+    q: "When server closes first, which side gets CLOSE_WAIT and which gets TIME_WAIT?",
+    opts: ["Client: TIME_WAIT, Server: CLOSE_WAIT", "Client: CLOSE_WAIT, Server: TIME_WAIT", "Both get CLOSE_WAIT", "Both get TIME_WAIT"],
+    ans: 1,
+    explain: "Whoever receives FIN first gets CLOSE_WAIT. Whoever sends FIN first gets FIN_WAIT_1/2 then TIME_WAIT. Server sends FIN first → server gets FIN_WAIT states → server gets TIME_WAIT (harmless). Client receives FIN → client gets CLOSE_WAIT (dangerous if not disposed)."
+  },
+  {
+    q: "Are kernel buffers allocated per port or per socket?",
+    opts: ["Per port — all connections to port 443 share one buffer", "Per process — one buffer pair per application", "Per socket — each unique 4-tuple gets its own buffers", "Per IP address — shared within a subnet"],
+    ans: 2,
+    explain: "Buffers are allocated per socket. A socket is identified by a unique 4-tuple: (src IP : src port : dst IP : dst port). Server port 443 can have thousands of active sockets, each with completely independent send and recv buffers. One full buffer does not affect any other socket."
+  },
+  {
+    q: "What is ResponseHeadersRead and why does it make buffer draining mandatory?",
+    opts: ["It reads only the first header line", "It returns HttpResponseMessage as soon as headers arrive — body is still in recv buffer", "It skips all headers and reads only the body", "It buffers the entire response before returning"],
+    ans: 1,
+    explain: "ResponseHeadersRead returns to your app as soon as HTTP headers arrive, without waiting for the body. The body bytes are still arriving in the recv buffer. Without reading or disposing, recv buffer fills up, TCP sends WINDOW=0, server pauses, and HttpClient is forced to open a new connection."
+  },
+  {
+    q: "Why does a 199-byte response 'accidentally' work without using on a Kestrel server?",
+    opts: ["Kestrel sends 204 No Content for small responses", "Kestrel buffers responses under 64KB; .NET auto-buffers body before returning", "TCP combines small packets automatically", "HttpClient has a special small-body optimization"],
+    ans: 1,
+    explain: "Kestrel buffers responses under 64KB before sending (MaxResponseBufferSize=64KB). Combined with ResponseContentRead (default), .NET buffers the entire body before returning HttpResponseMessage. By the time your code runs, recv buffer is already empty — connection reuse works 'accidentally' but is NOT safe to rely on."
+  },
+  {
+    q: "CLOSE_WAIT has been growing for 5 minutes on your production server. What does this mean?",
+    opts: ["Normal — TIME_WAIT connections transitioning", "Server is under high load — expected behavior", "Application bug — code not calling Dispose() on HttpResponseMessage", "Kestrel keepalive is too long"],
+    ans: 2,
+    explain: "CLOSE_WAIT growing means sockets are stuck in that state and never moving to LAST_ACK/CLOSED. This only happens when your application receives a FIN (server closed connection) but never calls close()/Dispose() on the socket. The fix is always in your code — typically a missing 'using' block or missing finally{response?.Dispose()}."
+  },
+  {
+    q: "What does TCP WINDOW=0 mean and when does the kernel send it?",
+    opts: ["The TCP window feature is disabled", "Kernel tells remote 'my recv buffer is full — stop sending'", "A zero-length acknowledgment packet", "Connection is being closed"],
+    ans: 1,
+    explain: "TCP Window Size is how many bytes the receiver can accept. When recv buffer fills up (e.g., unread body bytes), the kernel sets Window Size = 0 in ACK packets, signaling the sender to stop transmitting. The server pauses. If you then try to send Request 2 and the server is waiting for you to drain your buffer, you get a deadlock."
+  },
+  {
+    q: "What is the correct .NET pattern to prevent CLOSE_WAIT and ensure connection reuse?",
+    opts: [
+      "var r = await client.GetAsync(url); // no using needed",
+      "using var client = new HttpClient(); using var r = await client.GetAsync(url);",
+      "using var r = await client.GetAsync(url, ResponseHeadersRead); var body = await r.Content.ReadAsStringAsync();",
+      "client.GetAsync(url).Result; // synchronous is safer"
+    ],
+    ans: 2,
+    explain: "using on the RESPONSE (not client) ensures Dispose() is always called. This drains any unread body bytes from recv buffer and signals the kernel to handle the connection cleanly. Never use 'using' on HttpClient — that causes port exhaustion. Never create new HttpClient per request."
+  },
+];
+
+let quizAnswers = {};
+let quizDone = 0;
+
+function buildQuiz() {
+  const container = document.getElementById('quiz-container');
+  questions.forEach((q,i) => {
+    const div = document.createElement('div');
+    div.className = 'quiz-q';
+    div.id = 'qq-'+i;
+    div.innerHTML = `
+      <div class="question"><span style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:.7rem">Q${i+1}.</span> ${q.q}</div>
+      <div class="quiz-options">
+        ${q.opts.map((o,j) => `<button class="quiz-opt" onclick="answerQuiz(${i},${j})">${String.fromCharCode(65+j)}. ${o}</button>`).join('')}
+      </div>
+      <div class="insight ${q.ans >= 0 ? 'insight-green' : 'insight-red'} quiz-explain" id="qe-${i}">${q.explain}</div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function answerQuiz(qi, optIdx) {
+  if(quizAnswers[qi] !== undefined) return;
+  quizAnswers[qi] = optIdx;
+  const q = questions[qi];
+  const opts = document.querySelectorAll(`#qq-${qi} .quiz-opt`);
+  opts.forEach((o,j) => {
+    o.disabled = true;
+    if(j === q.ans) o.classList.add('correct');
+    else if(j === optIdx && j !== q.ans) o.classList.add('wrong');
+  });
+  document.getElementById('qe-'+qi).classList.add('show');
+  quizDone++;
+  if(quizDone === questions.length) showScore();
+}
+
+function showScore() {
+  const correct = Object.entries(quizAnswers).filter(([qi,ans]) => parseInt(ans) === questions[qi].ans).length;
+  const scoreDiv = document.getElementById('quiz-score');
+  scoreDiv.style.display = 'block';
+  const pct = Math.round(correct/questions.length*100);
+  const msg = pct === 100 ? '🎯 Perfect! TCP master.' : pct >= 80 ? '🔥 Excellent — solid understanding.' : pct >= 60 ? '👍 Good — review the weak spots.' : '📖 Keep studying — revisit the sections above.';
+  scoreDiv.innerHTML = `
+    <div class="score-num">${correct}/${questions.length}</div>
+    <div style="font-size:1rem;color:var(--muted);margin:.5rem 0">${pct}% correct</div>
+    <div style="color:var(--text);font-size:.9rem;margin-bottom:1rem">${msg}</div>
+    <button class="sim-btn" onclick="resetQuiz()">↺ Retake Quiz</button>
+  `;
+  scoreDiv.scrollIntoView({behavior:'smooth'});
+}
+
+function resetQuiz() {
+  quizAnswers = {};
+  quizDone = 0;
+  document.getElementById('quiz-container').innerHTML = '';
+  document.getElementById('quiz-score').style.display = 'none';
+  buildQuiz();
+}
+
+// ── INIT ─────────────────────────────────────────────────
+buildStateGrid();
+buildQuiz();
+</script>
+</body>
+</html>
