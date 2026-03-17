@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CORS — Visual Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #e8e6f0;
+    --muted: #6b6880;
+    --blue: #4f8ef7;
+    --blue-dim: rgba(79,142,247,0.12);
+    --green: #3dd68c;
+    --green-dim: rgba(61,214,140,0.12);
+    --red: #f7604f;
+    --red-dim: rgba(247,96,79,0.12);
+    --amber: #f5a623;
+    --amber-dim: rgba(245,166,35,0.12);
+    --purple: #b97cf8;
+    --purple-dim: rgba(185,124,248,0.12);
+    --teal: #2dd4bf;
+    --teal-dim: rgba(45,212,191,0.12);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79,142,247,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,142,247,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 24px 100px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  .hero {
+    text-align: center;
+    margin-bottom: 72px;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--blue);
+    background: var(--blue-dim);
+    border: 1px solid rgba(79,142,247,0.25);
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .hero h1 {
+    font-size: clamp(42px, 8vw, 72px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -2px;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #fff 0%, #888 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero p {
+    font-size: 16px;
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+
+  /* Nav pills */
+  .nav {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 56px;
+  }
+
+  .nav-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+
+  .nav-pill:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  .nav-pill.active { color: var(--blue); border-color: rgba(79,142,247,0.4); background: var(--blue-dim); }
+
+  /* Sections */
+  .section {
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  .section.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 16px;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .flow-step {
+    display: flex;
+    gap: 16px;
+    position: relative;
+    padding-bottom: 0;
+  }
+
+  .flow-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 36px;
+  }
+
+  .step-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+
+  .step-line {
+    width: 1px;
+    flex: 1;
+    min-height: 24px;
+    margin: 4px 0;
+  }
+
+  .flow-right {
+    flex: 1;
+    padding-bottom: 28px;
+  }
+
+  .step-label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    margin-top: 8px;
+  }
+
+  .step-body {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+    border: 1px solid var(--border);
+  }
+
+  .code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    color: var(--text);
+    overflow-x: auto;
+    line-height: 1.7;
+  }
+
+  .hl-blue { color: var(--blue); }
+  .hl-green { color: var(--green); }
+  .hl-red { color: var(--red); }
+  .hl-amber { color: var(--amber); }
+  .hl-purple { color: var(--purple); }
+  .hl-teal { color: var(--teal); }
+  .hl-muted { color: var(--muted); }
+
+  /* Two column */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+
+  .badge-blue { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(79,142,247,0.2); }
+  .badge-green { background: var(--green-dim); color: var(--green); border: 1px solid rgba(61,214,140,0.2); }
+  .badge-red { background: var(--red-dim); color: var(--red); border: 1px solid rgba(247,96,79,0.2); }
+  .badge-amber { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,166,35,0.2); }
+  .badge-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(185,124,248,0.2); }
+
+  /* Insight box */
+  .insight {
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 16px 0;
+    border-left: 3px solid;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .insight-blue { background: var(--blue-dim); border-color: var(--blue); color: #a8c8fb; }
+  .insight-green { background: var(--green-dim); border-color: var(--green); color: #8ef0c4; }
+  .insight-red { background: var(--red-dim); border-color: var(--red); color: #fbb0a8; }
+  .insight-amber { background: var(--amber-dim); border-color: var(--amber); color: #fad48a; }
+  .insight-purple { background: var(--purple-dim); border-color: var(--purple); color: #d4aafc; }
+
+  /* Section heading */
+  .section-heading {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+
+  .section-sub {
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 28px;
+    line-height: 1.6;
+  }
+
+  /* Interactive demo */
+  .demo-box {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .demo-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .request-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .request-row:hover { border-color: var(--border2); background: var(--surface2); }
+  .request-row.selected { border-color: rgba(79,142,247,0.4); background: var(--blue-dim); }
+
+  .method {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    width: 64px;
+    text-align: center;
+    padding: 3px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .method-get { background: var(--green-dim); color: var(--green); }
+  .method-post { background: var(--blue-dim); color: var(--blue); }
+  .method-put { background: var(--amber-dim); color: var(--amber); }
+  .method-delete { background: var(--red-dim); color: var(--red); }
+  .method-options { background: var(--purple-dim); color: var(--purple); }
+
+  .request-info { flex: 1; }
+  .request-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); }
+  .request-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .result-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    min-height: 100px;
+    transition: all 0.3s;
+  }
+
+  .result-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+
+  /* Animated flow */
+  .anim-container {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    overflow: hidden;
+  }
+
+  .anim-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .anim-node {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 120px;
+  }
+
+  .anim-track {
+    flex: 1;
+    height: 2px;
+    background: var(--border2);
+    margin: 0 12px;
+    position: relative;
+    overflow: visible;
+  }
+
+  .anim-packet {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    left: -5px;
+    transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .anim-label {
+    position: absolute;
+    top: -22px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .run-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--blue-dim);
+    border: 1px solid rgba(79,142,247,0.3);
+    color: var(--blue);
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 20px;
+  }
+
+  .run-btn:hover { background: rgba(79,142,247,0.2); }
+
+  .log {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2;
+    min-height: 80px;
+  }
+
+  .log-entry {
+    display: flex;
+    gap: 10px;
+    opacity: 0;
+    animation: slideIn 0.3s ease forwards;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .log-time { color: var(--muted); min-width: 48px; }
+
+  /* Case grid */
+  .case-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 20px; }
+  @media (max-width: 640px) { .case-grid { grid-template-columns: 1fr; } }
+
+  .case-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .case-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .case-card.active-case { border-color: rgba(79,142,247,0.5); background: var(--blue-dim); transform: translateY(-2px); }
+
+  .case-num {
+    font-size: 28px;
+    font-weight: 800;
+    opacity: 0.15;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .case-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .case-example { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+  .case-detail {
+    display: none;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .case-detail.show { display: block; animation: fadeIn 0.25s ease; }
+
+  /* Summary table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 14px; font-size: 11px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); border-bottom: 1px solid var(--border2); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Progress indicator */
+  .progress-bar {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 48px;
+  }
+
+  .prog-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border2);
+    transition: all 0.3s;
+  }
+
+  .prog-dot.active { background: var(--blue); width: 20px; border-radius: 3px; }
+
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-tag">HTTP Security</div>
+    <h1>CORS</h1>
+    <p>Cross-Origin Resource Sharing — everything you need to understand it, once and for all.</p>
+  </div>
+
+  <!-- Nav -->
+  <div class="nav">
+    <button class="nav-pill active" onclick="showSection('what', this)">01 What is CORS</button>
+    <button class="nav-pill" onclick="showSection('flow', this)">02 Request Flow</button>
+    <button class="nav-pill" onclick="showSection('browser', this)">03 Browser vs Postman</button>
+    <button class="nav-pill" onclick="showSection('checks', this)">04 When it checks</button>
+    <button class="nav-pill" onclick="showSection('preflight', this)">05 Why Preflight</button>
+    <button class="nav-pill" onclick="showSection('summary', this)">06 Summary</button>
+  </div>
+
+  <!-- Progress dots -->
+  <div class="progress-bar" id="progress">
+    <div class="prog-dot active"></div>
+    <div class="prog-dot"></div>
+    <div class="prog-dot"></div>
+    <div class="prog-dot"></div>
+    <div class="prog-dot"></div>
+    <div class="prog-dot"></div>
+  </div>
+
+  <!-- ═══ SECTION 1: WHAT IS CORS ═══ -->
+  <div class="section active" id="sec-what">
+    <div class="section-heading">What is CORS?</div>
+    <div class="section-sub">A browser security mechanism that controls which websites can request resources from other domains.</div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--amber)">The Same-Origin Policy problem</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:16px;">
+        By default, browsers block scripts on <span class="badge badge-blue">app.com</span> from making requests to <span class="badge badge-red">api.com</span>. This is called the <strong style="color:var(--text)">Same-Origin Policy</strong>. CORS is the system that lets servers selectively relax this restriction.
+      </div>
+      <div class="insight insight-amber">
+        <strong>What "origin" means:</strong> protocol + domain + port — all three must match. <code style="font-family:JetBrains Mono,monospace;font-size:11px;background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:3px;">https://app.com:443</code> and <code style="font-family:JetBrains Mono,monospace;font-size:11px;background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:3px;">https://api.app.com:443</code> are different origins — different subdomain.
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--green);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">✓ Same origin</div>
+        <div class="code" style="font-size:11px;">
+          <span class="hl-muted"># All same origin as</span><br>
+          <span class="hl-blue">https://example.com</span><br><br>
+          <span class="hl-green">✓</span> https://example.com/page<br>
+          <span class="hl-green">✓</span> https://example.com/api/v2
+        </div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--red);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">✗ Cross origin</div>
+        <div class="code" style="font-size:11px;">
+          <span class="hl-muted"># Different origin</span><br><br>
+          <span class="hl-red">✗</span> http://example.com    <span class="hl-muted">← protocol</span><br>
+          <span class="hl-red">✗</span> https://api.example.com <span class="hl-muted">← subdomain</span><br>
+          <span class="hl-red">✗</span> https://example.com:8080 <span class="hl-muted">← port</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--blue)">Key CORS response headers</div>
+      <div class="code">
+        <span class="hl-green">Access-Control-Allow-Origin</span><span class="hl-muted">:    </span><span class="hl-amber">https://app.com</span>   <span class="hl-muted"># which origins allowed</span><br>
+        <span class="hl-green">Access-Control-Allow-Methods</span><span class="hl-muted">:  </span><span class="hl-amber">GET, POST, PUT</span>    <span class="hl-muted"># which methods allowed</span><br>
+        <span class="hl-green">Access-Control-Allow-Headers</span><span class="hl-muted">:  </span><span class="hl-amber">Authorization</span>     <span class="hl-muted"># which req headers allowed</span><br>
+        <span class="hl-green">Access-Control-Allow-Credentials</span><span class="hl-muted">: </span><span class="hl-amber">true</span>              <span class="hl-muted"># allow cookies?</span><br>
+        <span class="hl-green">Access-Control-Max-Age</span><span class="hl-muted">:       </span><span class="hl-amber">86400</span>             <span class="hl-muted"># cache preflight 24h</span>
+      </div>
+      <div class="insight insight-red" style="margin-top:14px;">
+        <strong>Common trap:</strong> Using <code style="font-family:JetBrains Mono,monospace;font-size:11px;">Access-Control-Allow-Origin: *</code> with <code style="font-family:JetBrains Mono,monospace;font-size:11px;">Allow-Credentials: true</code> together is rejected by browsers. For cookies/auth you must specify the exact origin.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 2: FLOW ═══ -->
+  <div class="section" id="sec-flow">
+    <div class="section-heading">Request Flow</div>
+    <div class="section-sub">Step by step — what actually happens when your JS makes a cross-origin request.</div>
+
+    <button class="run-btn" onclick="runAnimation()">▶ Run animation</button>
+
+    <div class="anim-container" style="margin-bottom:20px;">
+      <div class="anim-row">
+        <div class="anim-node" style="background:var(--blue-dim);border:1px solid rgba(79,142,247,0.3);color:var(--blue);">Browser<br><span style="font-size:11px;font-weight:400;opacity:.7">app.com</span></div>
+        <div class="anim-track" id="track1">
+          <div class="anim-packet" id="pkt1" style="background:var(--blue);"></div>
+          <div class="anim-label" id="lbl1" style="color:var(--blue);">GET /data + Origin</div>
+        </div>
+        <div class="anim-node" id="server-node" style="background:var(--surface);border:1px solid var(--border2);color:var(--muted);">Server<br><span style="font-size:11px;font-weight:400;opacity:.7">api.com</span></div>
+        <div class="anim-track" id="track2">
+          <div class="anim-packet" id="pkt2" style="background:var(--green);right:-5px;left:auto;"></div>
+          <div class="anim-label" id="lbl2" style="color:var(--green);">200 OK + CORS headers</div>
+        </div>
+        <div class="anim-node" id="browser-result" style="background:var(--surface);border:1px solid var(--border2);color:var(--muted);">JS<br><span style="font-size:11px;font-weight:400;opacity:.7">waiting...</span></div>
+      </div>
+      <div class="log" id="anim-log">
+        <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0;">Click "Run animation" to see the flow</div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="step-dot" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(79,142,247,0.3);">1</div>
+          <div class="step-line" style="background:var(--border2);"></div>
+        </div>
+        <div class="flow-right">
+          <div class="step-label">Browser sends request with Origin header</div>
+          <div class="step-body">
+            Browser automatically adds <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--blue);">Origin: https://app.com</code> to every cross-origin request. You don't control this — the browser always does it.
+            <div class="code">GET /data HTTP/1.1
+Host: <span class="hl-teal">api.com</span>
+<span class="hl-amber">Origin: https://app.com</span>   <span class="hl-muted">← auto-added by browser</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="step-dot" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(61,214,140,0.3);">2</div>
+          <div class="step-line" style="background:var(--border2);"></div>
+        </div>
+        <div class="flow-right">
+          <div class="step-label">Server processes and responds</div>
+          <div class="step-body">
+            The server <strong style="color:var(--text)">has no idea CORS exists</strong>. It just runs its logic and responds — including whatever <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--green);">Access-Control-*</code> headers you've configured.
+            <div class="code">HTTP/1.1 200 OK
+<span class="hl-green">Access-Control-Allow-Origin: https://app.com</span>
+Content-Type: application/json
+
+{"data": "..."}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="step-dot" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,166,35,0.3);">3</div>
+          <div class="step-line" style="background:var(--border2);"></div>
+        </div>
+        <div class="flow-right">
+          <div class="step-label">Browser checks the CORS header</div>
+          <div class="step-body">
+            The browser reads <code style="font-family:JetBrains Mono,monospace;font-size:11px;">Access-Control-Allow-Origin</code> and checks: is my origin in there?
+            <div class="insight insight-blue" style="margin-top:10px;">
+              <strong>If YES →</strong> JS gets the response data. Everything works.<br>
+              <strong>If NO →</strong> Browser discards the response. JS sees a network error. The server already ran — you can't undo it.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="step-dot" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(247,96,79,0.3);">!</div>
+        </div>
+        <div class="flow-right">
+          <div class="step-label">The most important thing to remember</div>
+          <div class="step-body">
+            <div class="insight insight-red" style="margin:0;">
+              CORS errors happen in the browser, not the server. The fix is <strong>always on the server side</strong> — adding the right response headers. You cannot fix CORS from your frontend code.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 3: BROWSER VS POSTMAN ═══ -->
+  <div class="section" id="sec-browser">
+    <div class="section-heading">Browser vs Postman</div>
+    <div class="section-sub">CORS is only enforced by browsers — Postman, curl, and server-to-server calls are never blocked.</div>
+
+    <div class="two-col" style="margin-bottom:20px;">
+      <div style="background:var(--surface);border:1px solid rgba(247,96,79,0.2);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--red);text-transform:uppercase;letter-spacing:.1em;margin-bottom:16px;">Browser — CORS enforced</div>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--blue-dim);color:var(--blue);border:1px solid rgba(79,142,247,0.3);font-size:11px;">You</div>
+              <div class="step-line" style="background:var(--border2);min-height:16px;"></div>
+            </div>
+            <div class="flow-right" style="padding-bottom:16px;">
+              <div style="font-size:12px;color:var(--muted);padding-top:6px;">Logged into bank.com</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--red-dim);color:var(--red);border:1px solid rgba(247,96,79,0.3);font-size:10px;">evil</div>
+              <div class="step-line" style="background:var(--border2);min-height:16px;"></div>
+            </div>
+            <div class="flow-right" style="padding-bottom:16px;">
+              <div style="font-size:12px;color:var(--muted);padding-top:6px;">Visit evil.com — it silently calls bank.com with your cookies</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--green-dim);color:var(--green);border:1px solid rgba(61,214,140,0.3);font-size:10px;">✓</div>
+            </div>
+            <div class="flow-right">
+              <div style="font-size:12px;color:var(--green);padding-top:6px;">CORS blocks it — browser sees evil.com not in allowed list. You're safe.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface);border:1px solid rgba(61,214,140,0.2);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--green);text-transform:uppercase;letter-spacing:.1em;margin-bottom:16px;">Postman — no CORS</div>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--surface2);color:var(--muted);border:1px solid var(--border2);font-size:10px;">dev</div>
+              <div class="step-line" style="background:var(--border2);min-height:16px;"></div>
+            </div>
+            <div class="flow-right" style="padding-bottom:16px;">
+              <div style="font-size:12px;color:var(--muted);padding-top:6px;">Developer consciously opens Postman</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(185,124,248,0.3);font-size:10px;">req</div>
+              <div class="step-line" style="background:var(--border2);min-height:16px;"></div>
+            </div>
+            <div class="flow-right" style="padding-bottom:16px;">
+              <div style="font-size:12px;color:var(--muted);padding-top:6px;">No ambient session, no cookies auto-attached</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-left">
+              <div class="step-dot" style="width:28px;height:28px;background:var(--green-dim);color:var(--green);border:1px solid rgba(61,214,140,0.3);font-size:10px;">✓</div>
+            </div>
+            <div class="flow-right">
+              <div style="font-size:12px;color:var(--green);padding-top:6px;">Always works. CORS would add zero security here — no session to hijack.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--purple)">The real question CORS answers</div>
+      <div class="insight insight-purple">
+        "Did the user choose to make this request, or was it triggered silently by a webpage that could be malicious?"
+      </div>
+      <div style="margin-top:16px;">
+        <table>
+          <tr>
+            <th>Client</th>
+            <th>Ambient session?</th>
+            <th>User-initiated?</th>
+            <th>CORS enforced?</th>
+          </tr>
+          <tr>
+            <td>Browser</td>
+            <td><span class="badge badge-red">Yes — cookies auto-sent</span></td>
+            <td>Not always</td>
+            <td><span class="badge badge-red">Yes</span></td>
+          </tr>
+          <tr>
+            <td>Postman</td>
+            <td><span class="badge badge-green">No</span></td>
+            <td><span class="badge badge-green">Always</span></td>
+            <td><span class="badge badge-green">No</span></td>
+          </tr>
+          <tr>
+            <td>curl / Node.js</td>
+            <td><span class="badge badge-green">No</span></td>
+            <td><span class="badge badge-green">Always</span></td>
+            <td><span class="badge badge-green">No</span></td>
+          </tr>
+          <tr>
+            <td>Server → Server</td>
+            <td><span class="badge badge-green">No</span></td>
+            <td><span class="badge badge-green">Always</span></td>
+            <td><span class="badge badge-green">No</span></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 4: WHEN IT CHECKS ═══ -->
+  <div class="section" id="sec-checks">
+    <div class="section-heading">When does it check?</div>
+    <div class="section-sub">Not every request triggers a CORS check. The browser is smart about it.</div>
+
+    <div class="case-grid">
+      <div class="case-card" onclick="showCase(1, this)">
+        <div class="case-num" style="color:var(--muted)">01</div>
+        <div class="case-name">Same origin</div>
+        <div class="case-example">app.com → app.com</div>
+      </div>
+      <div class="case-card" onclick="showCase(2, this)">
+        <div class="case-num" style="color:var(--blue)">02</div>
+        <div class="case-name">Simple cross-origin</div>
+        <div class="case-example">GET, HEAD, plain POST</div>
+      </div>
+      <div class="case-card" onclick="showCase(3, this)">
+        <div class="case-num" style="color:var(--purple)">03</div>
+        <div class="case-name">Complex cross-origin</div>
+        <div class="case-example">DELETE, PUT, custom headers</div>
+      </div>
+    </div>
+
+    <div class="case-detail" id="case-detail-1">
+      <div class="badge badge-green" style="margin-bottom:12px;">No CORS check at all</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;">
+        Same origin requests skip CORS entirely. Browser doesn't even think about it — there's no cross-origin risk if the request comes from the same place.
+      </div>
+      <div class="code" style="margin-top:12px;">
+<span class="hl-muted">// Both from https://app.com — no CORS check</span>
+fetch('/api/users')           <span class="hl-green">// ✓ same origin, instant</span>
+fetch('https://app.com/api') <span class="hl-green">// ✓ same origin, instant</span></div>
+    </div>
+
+    <div class="case-detail" id="case-detail-2">
+      <div class="badge badge-blue" style="margin-bottom:12px;">Checks on every request — no extra round trip</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;">
+        Simple requests are sent directly. The browser reads the CORS headers in the response and decides whether to pass the data to JS. One round trip only.
+      </div>
+      <div class="code" style="margin-top:12px;">
+<span class="hl-muted">// "Simple" = GET, HEAD, or POST with no custom headers</span>
+fetch('https://api.com/data')  <span class="hl-blue">// → sends request → checks response headers</span>
+<span class="hl-muted">// 1 round trip every time, but just a header read — basically free</span></div>
+      <div class="insight insight-blue" style="margin-top:12px;">A simple request is safe to fire blindly because even if the server runs it, blocking the response means your JS never sees any data that could be leaked.</div>
+    </div>
+
+    <div class="case-detail" id="case-detail-3">
+      <div class="badge badge-purple" style="margin-bottom:12px;">Preflight first — then cached</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;">
+        First call sends an OPTIONS preflight. Server responds with what's allowed. Browser caches it. All subsequent calls to the same endpoint skip the OPTIONS.
+      </div>
+      <div class="code" style="margin-top:12px;">
+<span class="hl-muted">// First call to DELETE /user</span>
+<span class="hl-purple">OPTIONS /user  →  Access-Control-Max-Age: 86400</span>  <span class="hl-muted">← preflight</span>
+<span class="hl-blue">DELETE /user   →  200 OK</span>                         <span class="hl-muted">← real request</span>
+
+<span class="hl-muted">// Next 24 hours — no OPTIONS sent</span>
+<span class="hl-blue">DELETE /user   →  200 OK</span>  <span class="hl-green">// preflight cached ✓</span></div>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 5: PREFLIGHT ═══ -->
+  <div class="section" id="sec-preflight">
+    <div class="section-heading">Why preflight?</div>
+    <div class="section-sub">The browser won't fire a destructive request without asking permission first.</div>
+
+    <!-- Interactive demo -->
+    <div class="demo-box">
+      <div class="demo-title">Click a request to see what happens</div>
+      <div class="request-row" onclick="selectRequest(this, 'get')">
+        <span class="method method-get">GET</span>
+        <div class="request-info">
+          <div class="request-url">api.com/users</div>
+          <div class="request-desc">No custom headers</div>
+        </div>
+        <span class="badge badge-green">simple</span>
+      </div>
+      <div class="request-row" onclick="selectRequest(this, 'post-json')">
+        <span class="method method-post">POST</span>
+        <div class="request-info">
+          <div class="request-url">api.com/users</div>
+          <div class="request-desc">Content-Type: application/json</div>
+        </div>
+        <span class="badge badge-purple">preflight</span>
+      </div>
+      <div class="request-row" onclick="selectRequest(this, 'delete')">
+        <span class="method method-delete">DELETE</span>
+        <div class="request-info">
+          <div class="request-url">api.com/users/123</div>
+          <div class="request-desc">Authorization header</div>
+        </div>
+        <span class="badge badge-purple">preflight</span>
+      </div>
+      <div class="request-row" onclick="selectRequest(this, 'put')">
+        <span class="method method-put">PUT</span>
+        <div class="request-info">
+          <div class="request-url">api.com/account</div>
+          <div class="request-desc">Custom X-API-Key header</div>
+        </div>
+        <span class="badge badge-purple">preflight</span>
+      </div>
+
+      <div class="result-panel" id="result-panel">
+        <div class="result-empty">← Select a request to see what the browser does</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--amber)">The core reason</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:12px;">
+        For a <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--green);">GET</code>, blocking the response is enough. The server didn't change anything.
+        <br><br>
+        But for <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--red);">DELETE /account</code> — the server executes it the moment it arrives. By the time the browser sees the response and thinks "wait, this origin isn't allowed", your account is already deleted. Blocking the response at that point is useless.
+      </div>
+      <div class="insight insight-amber">
+        <strong>Preflight is asking permission before pulling the trigger.</strong> OPTIONS is used because it's defined in the HTTP spec as safe and side-effect free — perfect for a "will you allow this?" knock.
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div style="background:var(--surface);border:1px solid rgba(247,96,79,0.2);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--red);margin-bottom:10px;">WITHOUT PREFLIGHT</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          evil.com fires <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--red);">DELETE /account</code><br>
+          Server executes it ← account gone<br>
+          Browser blocks response ← useless<br>
+          <span style="color:var(--red);">Damage already done.</span>
+        </div>
+      </div>
+      <div style="background:var(--surface);border:1px solid rgba(61,214,140,0.2);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;font-family:JetBrains Mono,monospace;color:var(--green);margin-bottom:10px;">WITH PREFLIGHT</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          Browser sends <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--purple);">OPTIONS</code> first<br>
+          Server: "evil.com? Not allowed."<br>
+          Browser stops. DELETE never sent.<br>
+          <span style="color:var(--green);">Account safe. ✓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 6: SUMMARY ═══ -->
+  <div class="section" id="sec-summary">
+    <div class="section-heading">Summary</div>
+    <div class="section-sub">Everything we covered, condensed.</div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--teal)">Mental model</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="insight insight-blue" style="margin:0;">
+          <strong>Browser = the bouncer.</strong> It enforces the rules.
+        </div>
+        <div class="insight insight-green" style="margin:0;">
+          <strong>Server = the guest list.</strong> It posts who's allowed.
+        </div>
+        <div class="insight insight-amber" style="margin:0;">
+          <strong>CORS = not your API's security.</strong> It protects users from malicious pages.
+        </div>
+        <div class="insight insight-purple" style="margin:0;">
+          <strong>Fix is always server-side.</strong> You can't fix CORS in frontend code.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <tr>
+          <th>Concept</th>
+          <th>What it means</th>
+        </tr>
+        <tr>
+          <td><span class="badge badge-blue">Same-Origin Policy</span></td>
+          <td style="color:var(--muted);font-size:12px;">Default browser rule — scripts can only talk to their own origin</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-green">CORS</span></td>
+          <td style="color:var(--muted);font-size:12px;">System for servers to opt-in to cross-origin requests</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-amber">Simple request</span></td>
+          <td style="color:var(--muted);font-size:12px;">GET/HEAD/plain POST — sent directly, response checked</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-purple">Preflight</span></td>
+          <td style="color:var(--muted);font-size:12px;">OPTIONS request sent before risky calls — permission check</td>
+        </tr>
+        <tr>
+          <td><code style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--teal);">Max-Age</code></td>
+          <td style="color:var(--muted);font-size:12px;">Caches preflight result — avoids OPTIONS on every call</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-red">Postman bypass</span></td>
+          <td style="color:var(--muted);font-size:12px;">No browser = no CORS — Postman/curl always work regardless</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="color:var(--green)">Quick fix cheatsheet</div>
+      <div class="code">
+<span class="hl-muted">// Express / Node</span>
+app.use(<span class="hl-green">'Access-Control-Allow-Origin'</span>, <span class="hl-amber">'https://app.com'</span>)
+
+<span class="hl-muted">// Or use the cors package</span>
+app.use(cors({ origin: <span class="hl-amber">'https://app.com'</span>, credentials: <span class="hl-blue">true</span> }))
+
+<span class="hl-muted">// Django / Python</span>
+CORS_ALLOWED_ORIGINS = [<span class="hl-amber">"https://app.com"</span>]
+
+<span class="hl-muted">// Nginx</span>
+add_header <span class="hl-green">Access-Control-Allow-Origin</span> <span class="hl-amber">"https://app.com"</span>;
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const sections = ['what','flow','browser','checks','preflight','summary'];
+
+function showSection(id, btn) {
+  sections.forEach(s => {
+    document.getElementById('sec-'+s)?.classList.remove('active');
+  });
+  document.getElementById('sec-'+id)?.classList.add('active');
+
+  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+
+  const idx = sections.indexOf(id);
+  document.querySelectorAll('.prog-dot').forEach((d,i) => {
+    d.classList.toggle('active', i === idx);
+  });
+}
+
+// Animation
+let animRunning = false;
+
+async function runAnimation() {
+  if (animRunning) return;
+  animRunning = true;
+
+  const log = document.getElementById('anim-log');
+  const pkt1 = document.getElementById('pkt1');
+  const pkt2 = document.getElementById('pkt2');
+  const lbl1 = document.getElementById('lbl1');
+  const lbl2 = document.getElementById('lbl2');
+  const track1 = document.getElementById('track1');
+  const track2 = document.getElementById('track2');
+  const serverNode = document.getElementById('server-node');
+  const browserResult = document.getElementById('browser-result');
+
+  // Reset
+  log.innerHTML = '';
+  pkt1.style.left = '-5px';
+  pkt2.style.right = '-5px'; pkt2.style.left = 'auto';
+  lbl1.style.opacity = '0';
+  lbl2.style.opacity = '0';
+  serverNode.style.background = 'var(--surface)';
+  serverNode.style.color = 'var(--muted)';
+  serverNode.style.border = '1px solid var(--border2)';
+  browserResult.style.background = 'var(--surface)';
+  browserResult.style.color = 'var(--muted)';
+  browserResult.innerHTML = 'JS<br><span style="font-size:11px;font-weight:400;opacity:.7">waiting...</span>';
+
+  const addLog = (msg, color, delay) => new Promise(res => {
+    setTimeout(() => {
+      const e = document.createElement('div');
+      e.className = 'log-entry';
+      e.style.animationDelay = '0s';
+      e.innerHTML = `<span class="log-time" style="color:var(--muted)">+${delay}ms</span><span style="color:${color}">${msg}</span>`;
+      log.appendChild(e);
+      res();
+    }, delay);
+  });
+
+  const wait = ms => new Promise(res => setTimeout(res, ms));
+
+  await addLog('Browser preparing cross-origin request...', 'var(--muted)', 0);
+  await wait(600);
+  await addLog('→ GET /data   Origin: https://app.com', 'var(--blue)', 600);
+
+  // animate packet forward
+  await wait(200);
+  lbl1.style.opacity = '1';
+  pkt1.style.transition = 'left 0.7s cubic-bezier(0.4,0,0.2,1)';
+  const t1w = track1.offsetWidth;
+  pkt1.style.left = (t1w - 5) + 'px';
+
+  await wait(900);
+  serverNode.style.background = 'var(--teal-dim)';
+  serverNode.style.color = 'var(--teal)';
+  serverNode.style.border = '1px solid rgba(45,212,191,0.3)';
+  lbl1.style.opacity = '0';
+  await addLog('Server received request — processing...', 'var(--teal)', 1500);
+  await wait(700);
+  await addLog('Server has no idea CORS exists. Runs normally.', 'var(--muted)', 2000);
+  await wait(600);
+  await addLog('← 200 OK   Access-Control-Allow-Origin: https://app.com', 'var(--green)', 2700);
+
+  // animate response back
+  await wait(200);
+  lbl2.style.opacity = '1';
+  const t2w = track2.offsetWidth;
+  pkt2.style.transition = 'none';
+  pkt2.style.left = (t2w - 5) + 'px'; pkt2.style.right = 'auto';
+  await wait(50);
+  pkt2.style.transition = 'left 0.7s cubic-bezier(0.4,0,0.2,1)';
+  pkt2.style.left = '-5px';
+
+  await wait(900);
+  lbl2.style.opacity = '0';
+  await addLog('Browser checking: is https://app.com in the allowed list?', 'var(--amber)', 3700);
+  await wait(700);
+  await addLog('✓ YES — origin matches. Passing data to JS.', 'var(--green)', 4300);
+
+  await wait(400);
+  browserResult.style.background = 'var(--green-dim)';
+  browserResult.style.color = 'var(--green)';
+  browserResult.style.border = '1px solid rgba(61,214,140,0.3)';
+  browserResult.innerHTML = 'JS<br><span style="font-size:11px;font-weight:400;opacity:.9">got data ✓</span>';
+
+  animRunning = false;
+}
+
+// Request demo
+const requestData = {
+  'get': {
+    steps: [
+      { icon: '→', color: 'var(--blue)', text: 'GET /users   Origin: https://app.com' },
+      { icon: '←', color: 'var(--green)', text: '200 OK   Access-Control-Allow-Origin: *' },
+      { icon: '✓', color: 'var(--green)', text: 'JS gets data. No preflight needed — GET is read-only, no side effects possible.' }
+    ],
+    note: null
+  },
+  'post-json': {
+    steps: [
+      { icon: '→', color: 'var(--purple)', text: 'OPTIONS /users   Origin: https://app.com   Access-Control-Request-Method: POST   Access-Control-Request-Headers: content-type' },
+      { icon: '←', color: 'var(--teal)', text: '204   Access-Control-Allow-Methods: POST   Access-Control-Allow-Headers: content-type   Access-Control-Max-Age: 86400' },
+      { icon: '→', color: 'var(--blue)', text: 'POST /users   Content-Type: application/json   {"name":"Alice"}' },
+      { icon: '←', color: 'var(--green)', text: '201 Created   {"id": 42}' },
+      { icon: '✓', color: 'var(--green)', text: 'JS gets response. Preflight cached 24h — next POST skips OPTIONS.' }
+    ],
+    note: 'JSON content-type triggers preflight because servers might not expect JSON and it could cause unintended processing.'
+  },
+  'delete': {
+    steps: [
+      { icon: '→', color: 'var(--purple)', text: 'OPTIONS /users/123   Origin: https://app.com   Access-Control-Request-Method: DELETE   Access-Control-Request-Headers: authorization' },
+      { icon: '←', color: 'var(--teal)', text: '204   Access-Control-Allow-Methods: DELETE   Access-Control-Allow-Headers: authorization' },
+      { icon: '→', color: 'var(--blue)', text: 'DELETE /users/123   Authorization: Bearer eyJ...' },
+      { icon: '←', color: 'var(--green)', text: '204 No Content' },
+      { icon: '✓', color: 'var(--green)', text: 'Deleted. If server had rejected preflight, DELETE would never have been sent.' }
+    ],
+    note: 'This is exactly why preflight exists — DELETE is destructive. Browser asks permission before pulling the trigger.'
+  },
+  'put': {
+    steps: [
+      { icon: '→', color: 'var(--purple)', text: 'OPTIONS /account   Access-Control-Request-Headers: x-api-key' },
+      { icon: '←', color: 'var(--red)', text: '403   (no CORS headers — server rejected)' },
+      { icon: '✗', color: 'var(--red)', text: 'Browser blocked. PUT never sent. x-api-key is not in the allowed headers list.' }
+    ],
+    note: 'Server must explicitly include custom headers in Access-Control-Allow-Headers or the browser blocks the request.'
+  }
+};
+
+function selectRequest(el, type) {
+  document.querySelectorAll('.request-row').forEach(r => r.classList.remove('selected'));
+  el.classList.add('selected');
+
+  const data = requestData[type];
+  const panel = document.getElementById('result-panel');
+  panel.innerHTML = data.steps.map((s, i) => `
+    <div style="display:flex;gap:10px;margin-bottom:12px;animation:slideIn .3s ease ${i*0.1}s both;">
+      <span style="color:${s.color};font-family:JetBrains Mono,monospace;font-size:14px;flex-shrink:0;width:16px;">${s.icon}</span>
+      <code style="font-family:JetBrains Mono,monospace;font-size:11px;color:${s.icon==='✓'||s.icon==='✗'?s.color:'var(--muted)'};line-height:1.6;">${s.text}</code>
+    </div>
+  `).join('') + (data.note ? `<div style="margin-top:8px;padding:10px 12px;background:var(--amber-dim);border-left:2px solid var(--amber);border-radius:0 6px 6px 0;font-size:12px;color:#fad48a;line-height:1.6;">${data.note}</div>` : '');
+}
+
+// Case cards
+function showCase(n, el) {
+  document.querySelectorAll('.case-card').forEach(c => c.classList.remove('active-case'));
+  el.classList.add('active-case');
+  [1,2,3].forEach(i => {
+    document.getElementById('case-detail-'+i)?.classList.remove('show');
+  });
+  document.getElementById('case-detail-'+n)?.classList.add('show');
+}
+</script>
+</body>
+</html>
