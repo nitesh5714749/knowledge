@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zepto × AI — MCP, OAuth & PKCE Deep Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#080808; --s1:#111; --s2:#181818; --s3:#202020;
+  --b1:rgba(255,255,255,.06); --b2:rgba(255,255,255,.11); --b3:rgba(255,255,255,.18);
+  --text:#EDEAE2; --sub:#A8A49C; --dim:#5C5A55;
+  --lime:#C8F04A; --teal:#3DEBB8; --purple:#9B7EFF;
+  --amber:#F5A523; --red:#FF5757; --pink:#F04A9A;
+  --mono:'DM Mono',monospace; --sans:'DM Sans',sans-serif; --disp:'Syne',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.75;overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1000;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23f)' opacity='1'/%3E%3C/svg%3E");opacity:.022}
+a{color:inherit;text-decoration:none}
+code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.07);border:1px solid var(--b2);border-radius:5px;padding:1px 6px;color:var(--teal)}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:16px 40px;background:rgba(8,8,8,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--b1)}
+.nlogo{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.05em}
+.nlogo em{font-style:normal;color:var(--lime)}
+.nlinks{display:flex;gap:24px;list-style:none}
+.nlinks a{font-size:12px;color:var(--dim);letter-spacing:.04em;transition:color .18s}
+.nlinks a:hover{color:var(--text)}
+
+/* HERO */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:flex-end;padding:0 40px 72px;position:relative;overflow:hidden}
+.hbg{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 18% 62%,rgba(200,240,74,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 80% 30%,rgba(155,126,255,.06) 0%,transparent 55%)}
+.hgrid{position:absolute;inset:0;background-image:linear-gradient(var(--b1) 1px,transparent 1px),linear-gradient(90deg,var(--b1) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(ellipse 90% 70% at 30% 70%,black 20%,transparent 80%)}
+.htag{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--lime);margin-bottom:28px;opacity:0;animation:fu .6s ease forwards .15s}
+.hh1{font-family:var(--disp);font-weight:800;font-size:clamp(52px,8vw,108px);line-height:.92;letter-spacing:-.025em;opacity:0;animation:fu .7s ease forwards .25s}
+.hh1 .d{color:var(--lime)} .hh1 .c{color:var(--dim);font-weight:400}
+.hdesc{margin-top:36px;max-width:540px;font-size:17px;color:var(--sub);font-weight:300;line-height:1.7;opacity:0;animation:fu .7s ease forwards .4s}
+.hchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:36px;opacity:0;animation:fu .7s ease forwards .55s}
+.chip{font-family:var(--mono);font-size:11px;padding:5px 13px;border-radius:99px;border:1px solid var(--b2);color:var(--dim);letter-spacing:.04em}
+.chip.hi{border-color:var(--lime);color:var(--lime)}
+.hscroll{position:absolute;bottom:40px;right:40px;font-family:var(--mono);font-size:11px;color:var(--dim);writing-mode:vertical-rl;letter-spacing:.1em;opacity:0;animation:fu .7s ease forwards .8s}
+@keyframes fu{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+
+/* LAYOUT */
+.wrap{max-width:1080px;margin:0 auto;padding:0 40px}
+section{padding:96px 0}
+hr.div{border:none;border-top:1px solid var(--b1);margin:0 40px}
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .55s ease,transform .55s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* TYPOGRAPHY */
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--lime);margin-bottom:14px}
+.stitle{font-family:var(--disp);font-size:clamp(26px,3.5vw,44px);font-weight:700;letter-spacing:-.02em;line-height:1.1;margin-bottom:22px}
+.sbody{font-size:16px;color:var(--sub);max-width:660px;line-height:1.8;font-weight:300}
+
+/* CARDS */
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-top:44px;background:var(--b1);border-radius:16px;overflow:hidden;padding:2px}
+.card{background:var(--s1);padding:32px 28px;border-right:1px solid var(--b1);border-bottom:1px solid var(--b1)}
+.card:nth-child(2n){border-right:none} .card:nth-last-child(-n+2){border-bottom:none}
+.card .ico{font-size:26px;margin-bottom:14px;display:block}
+.card h3{font-family:var(--disp);font-size:17px;font-weight:600;margin-bottom:10px}
+.card p{font-size:14px;color:var(--sub);line-height:1.65}
+
+/* QUOTE */
+.quote{margin-top:44px;padding:30px 36px;background:var(--s1);border-left:3px solid var(--lime);border-radius:0 12px 12px 0}
+.qtext{font-family:var(--disp);font-size:21px;font-weight:600;line-height:1.4;margin-bottom:8px}
+.qmeta{font-family:var(--mono);font-size:12px;color:var(--dim)}
+
+/* ACTORS */
+.actors{display:flex;align-items:stretch;margin-top:44px;background:var(--s1);border:1px solid var(--b1);border-radius:16px;overflow:hidden}
+.actor{flex:1;padding:28px 22px;text-align:center;border-right:1px solid var(--b1)}
+.actor:last-child{border-right:none}
+.aico{width:44px;height:44px;border-radius:10px;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.actor h4{font-family:var(--disp);font-size:14px;font-weight:600;margin-bottom:6px}
+.actor p{font-size:12px;color:var(--sub);line-height:1.5}
+.amid{flex:0 0 44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--dim);border-right:1px solid var(--b1);background:var(--s2)}
+
+/* TOOLS TABLE */
+.tbl{margin-top:44px;background:var(--s1);border:1px solid var(--b1);border-radius:16px;overflow:hidden}
+.tbl-h{display:grid;grid-template-columns:170px 1fr 110px;padding:12px 24px;border-bottom:1px solid var(--b1);font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.tbl-r{display:grid;grid-template-columns:170px 1fr 110px;padding:16px 24px;border-bottom:1px solid var(--b1);align-items:center;gap:12px;transition:background .14s}
+.tbl-r:last-child{border-bottom:none} .tbl-r:hover{background:var(--s2)}
+.tfn{font-family:var(--mono);font-size:13px;color:var(--teal)}
+.tdesc{font-size:13px;color:var(--sub)}
+.badge{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:99px;display:inline-block}
+.bc{background:rgba(61,235,184,.1);color:var(--teal);border:1px solid rgba(61,235,184,.2)}
+.ba{background:rgba(155,126,255,.1);color:var(--purple);border:1px solid rgba(155,126,255,.2)}
+.bu{background:rgba(200,240,74,.1);color:var(--lime);border:1px solid rgba(200,240,74,.2)}
+
+/* PROBLEM/SOLUTION */
+.psgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:44px}
+.psc{padding:26px;border-radius:12px;border:1px solid}
+.prob{border-color:rgba(255,87,87,.25);background:rgba(255,87,87,.04)}
+.sol{border-color:rgba(61,235,184,.25);background:rgba(61,235,184,.04)}
+.pslabel{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px}
+.prob .pslabel{color:var(--red)} .sol .pslabel{color:var(--teal)}
+.psc h3{font-family:var(--disp);font-size:16px;font-weight:600;margin-bottom:10px}
+.psc p{font-size:14px;color:var(--sub);line-height:1.65}
+
+/* FLOW STEPS */
+.flow{margin-top:52px}
+.fstep{display:grid;grid-template-columns:52px 1fr;gap:20px;margin-bottom:2px}
+.fleft{display:flex;flex-direction:column;align-items:center}
+.fnum{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;font-weight:500;flex-shrink:0;border:1px solid}
+.fline{width:1px;flex:1;min-height:32px;background:var(--b2);margin-top:4px}
+.fstep:last-child .fline{display:none}
+.fbody{padding-bottom:36px}
+.factor{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.fbody h3{font-family:var(--disp);font-size:19px;font-weight:600;margin-bottom:10px;line-height:1.3}
+.fbody p{font-size:15px;color:var(--sub);line-height:1.75;margin-bottom:14px;font-weight:300}
+.cblock{background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:16px 20px;font-family:var(--mono);font-size:12px;line-height:1.8;overflow-x:auto}
+.ck{color:var(--purple)} .cv{color:var(--teal)} .cs{color:var(--amber)}
+.cc{color:var(--dim);font-style:italic} .co{color:var(--lime)} .ce{color:var(--red)}
+.callout{display:flex;gap:12px;align-items:flex-start;border-radius:8px;padding:14px 16px;margin-top:12px}
+.cerr{background:rgba(255,87,87,.07);border:1px solid rgba(255,87,87,.2)}
+.cok{background:rgba(61,235,184,.07);border:1px solid rgba(61,235,184,.2)}
+.callout p{font-size:13px!important;margin:0!important;font-weight:300!important}
+.cerr p{color:#FF9999!important} .cok p{color:var(--teal)!important}
+.ci{font-size:16px;flex-shrink:0;margin-top:1px}
+.vp .fnum{background:rgba(155,126,255,.12);color:var(--purple);border-color:rgba(155,126,255,.25)} .vp .factor{color:var(--purple)}
+.vt .fnum{background:rgba(61,235,184,.12);color:var(--teal);border-color:rgba(61,235,184,.25)} .vt .factor{color:var(--teal)}
+.va .fnum{background:rgba(245,165,35,.12);color:var(--amber);border-color:rgba(245,165,35,.25)} .va .factor{color:var(--amber)}
+.vl .fnum{background:rgba(200,240,74,.12);color:var(--lime);border-color:rgba(200,240,74,.25)} .vl .factor{color:var(--lime)}
+
+/* SEQUENCE */
+.apills{display:flex;gap:8px;flex-wrap:wrap;margin:32px 0 12px}
+.apill{font-family:var(--mono);font-size:10px;padding:4px 11px;border-radius:99px;border:1px solid}
+.apu{background:rgba(240,74,154,.1);color:var(--pink);border-color:rgba(240,74,154,.25)}
+.apai{background:rgba(155,126,255,.1);color:var(--purple);border-color:rgba(155,126,255,.25)}
+.apm{background:rgba(61,235,184,.1);color:var(--teal);border-color:rgba(61,235,184,.25)}
+.apauth{background:rgba(200,240,74,.1);color:var(--lime);border-color:rgba(200,240,74,.25)}
+.apotp{background:rgba(245,165,35,.1);color:var(--amber);border-color:rgba(245,165,35,.25)}
+.seqbox{background:var(--s1);border:1px solid var(--b1);border-radius:16px;overflow:hidden;margin-top:8px}
+.sphase{padding:10px 22px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.spdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.spsteps{margin-left:auto;color:var(--dim)}
+.srow{display:grid;grid-template-columns:30px 1fr 96px;padding:14px 22px;border-bottom:1px solid var(--b1);gap:14px;align-items:flex-start;transition:background .13s}
+.srow:last-child{border-bottom:none} .srow:hover{background:var(--s2)}
+.snum{font-family:var(--mono);font-size:11px;color:var(--dim);padding-top:1px}
+.sc h4{font-size:13px;font-weight:500;margin-bottom:4px}
+.sc p{font-size:12px;color:var(--sub);line-height:1.55}
+.sc .cblock{margin-top:10px;font-size:11px;padding:12px 16px}
+.sarr{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.sf,.st{font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:99px;border:1px solid;white-space:nowrap}
+
+/* TOKENS */
+.tokgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:44px}
+.tokcard{background:var(--s1);border:1px solid var(--b1);border-radius:16px;overflow:hidden}
+.tokhead{padding:18px 22px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center}
+.tokhead h3{font-family:var(--disp);font-size:15px;font-weight:600}
+.lfp{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:99px}
+.lfs{background:rgba(245,165,35,.12);color:var(--amber);border:1px solid rgba(245,165,35,.25)}
+.lfl{background:rgba(155,126,255,.12);color:var(--purple);border:1px solid rgba(155,126,255,.25)}
+.tokprop{display:flex;justify-content:space-between;align-items:center;padding:11px 22px;border-bottom:1px solid var(--b1);font-size:13px}
+.tokprop:last-child{border-bottom:none}
+.tokk{color:var(--sub)} .tokv{font-weight:500}
+
+/* LAYERS */
+.layers{margin-top:44px;display:flex;flex-direction:column;gap:10px}
+.layer{display:flex;gap:20px;align-items:flex-start;padding:24px;background:var(--s1);border:1px solid var(--b1);border-radius:12px;transition:border-color .15s}
+.layer:hover{border-color:var(--b2)}
+.ln{font-family:var(--mono);font-size:11px;color:var(--dim);min-width:22px;padding-top:2px}
+.lbody h3{font-family:var(--disp);font-size:16px;font-weight:600;margin-bottom:6px}
+.lbody p{font-size:13px;color:var(--sub);line-height:1.65}
+.lbadge{margin-left:auto;font-family:var(--mono);font-size:9px;padding:5px 12px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+
+/* FULL PICTURE */
+.fpbox{background:var(--s1);border:1px solid var(--b1);border-radius:16px;overflow:hidden;margin-top:44px}
+.fphead{padding:22px 28px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between}
+.fphead h3{font-family:var(--disp);font-size:19px;font-weight:600}
+.fprow{display:grid;grid-template-columns:44px 190px 1fr 120px;padding:15px 28px;border-bottom:1px solid var(--b1);align-items:center;gap:14px;transition:background .13s}
+.fprow:last-child{border-bottom:none} .fprow:hover{background:var(--s2)}
+.fpph{font-family:var(--mono);font-size:13px;text-align:center}
+.fpname{font-size:14px;font-weight:500}
+.fpdesc{font-size:13px;color:var(--sub)}
+.fpst{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:99px;text-align:center}
+.stc{background:rgba(61,235,184,.08);color:var(--teal);border:1px solid rgba(61,235,184,.15)}
+.sts{background:rgba(155,126,255,.08);color:var(--purple);border:1px solid rgba(155,126,255,.15)}
+.stu{background:rgba(200,240,74,.08);color:var(--lime);border:1px solid rgba(200,240,74,.15)}
+.stp{background:rgba(245,165,35,.08);color:var(--amber);border:1px solid rgba(245,165,35,.15)}
+
+/* DEMO */
+.demo{margin-top:48px;border-radius:16px;border:1px solid var(--b1);overflow:hidden}
+.dbar{background:var(--s2);padding:12px 18px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--b1)}
+.ddot{width:11px;height:11px;border-radius:50%}
+.dtitle{font-family:var(--mono);font-size:12px;color:var(--dim);margin-left:8px}
+.dinner{background:#141414;padding:16px}
+.prow{display:flex;justify-content:flex-end;margin-bottom:12px}
+.pbub{background:#252525;border-radius:18px 18px 4px 18px;padding:10px 16px;font-size:13px;max-width:260px;line-height:1.4}
+.pbub .at{color:var(--purple)}
+.zwid{background:#1C1C1C;border-radius:12px;border:1px solid rgba(255,255,255,.07);overflow:hidden}
+.zwhead{padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:10px}
+.zwlogo{width:26px;height:26px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:white;font-family:var(--disp)}
+.zwname{font-size:13px;font-weight:500}
+.ztabs{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:0 16px}
+.ztab{padding:9px 13px;font-size:12px;color:var(--dim)}
+.ztab.on{color:var(--purple);border-bottom:2px solid var(--purple)}
+.zsearch{padding:10px 14px}
+.zsbar{background:#111;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 13px;display:flex;align-items:center;gap:8px;font-size:13px;color:#DDD}
+.zpgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 14px 14px}
+.zprod{background:#161616;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;border:1px solid rgba(255,255,255,.05);position:relative}
+.zimg{background:#222;border-radius:7px;height:68px;display:flex;align-items:center;justify-content:center;font-size:26px}
+.zname{font-size:10px;color:#CCC;line-height:1.35}
+.zwt{font-size:9px;color:var(--dim)}
+.zbot{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+.zprice{font-size:12px;font-weight:600}
+.zadd{background:var(--purple);border-radius:5px;padding:3px 9px;font-size:10px;font-weight:500;color:white;cursor:pointer}
+.zbadge{position:absolute;top:6px;right:6px;background:var(--amber);border-radius:3px;padding:1px 4px;font-size:8px;font-weight:700;color:#000}
+.zpbar{padding:0 14px 14px}
+.zpb{background:#111;border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:9px 15px;font-size:12px;color:var(--dim)}
+.anns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:28px}
+.ann{display:flex;gap:14px;align-items:flex-start;background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:20px}
+.aletter{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;font-weight:500;flex-shrink:0;border:1px solid}
+.ann h4{font-family:var(--disp);font-size:14px;font-weight:600;margin-bottom:5px}
+.ann p{font-size:13px;color:var(--sub);line-height:1.6}
+
+/* INSIGHT */
+.insight{padding:30px 34px;background:var(--s1);border-left:3px solid var(--purple);border-radius:0 12px 12px 0;margin-top:36px}
+.insight .eyebrow{margin-bottom:14px}
+.insight p{font-size:15px;color:var(--sub);line-height:1.8;font-weight:300}
+.insight p+p{margin-top:14px}
+.insight strong{color:var(--text);font-weight:500}
+
+/* FOOTER */
+footer{border-top:1px solid var(--b1);padding:40px;max-width:1080px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.fleft{font-family:var(--disp);font-size:13px;font-weight:600;color:var(--dim)}
+.fleft em{font-style:normal;color:var(--lime)}
+.fright{font-family:var(--mono);font-size:11px;color:var(--dim)}
+
+/* RESPONSIVE */
+@media(max-width:760px){
+  nav{padding:14px 20px} .nlinks{display:none}
+  .hero,.wrap{padding-left:20px;padding-right:20px}
+  hr.div{margin:0 20px}
+  .cgrid,.psgrid,.tokgrid,.anns{grid-template-columns:1fr}
+  .actors{flex-direction:column} .amid{display:none}
+  .tbl-h{display:none} .tbl-r{grid-template-columns:1fr}
+  .fprow{grid-template-columns:30px 1fr} .fpdesc,.fpst{display:none}
+  .zpgrid{grid-template-columns:repeat(2,1fr)}
+  .srow{grid-template-columns:28px 1fr} .sarr{display:none}
+  footer{flex-direction:column;gap:12px;text-align:center}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nlogo" href="#">Zepto <em>×</em> AI</a>
+  <ul class="nlinks">
+    <li><a href="#s1">Vision</a></li>
+    <li><a href="#s2">MCP</a></li>
+    <li><a href="#s3">Auth &amp; PKCE</a></li>
+    <li><a href="#s4">Sequence</a></li>
+    <li><a href="#s5">Tokens</a></li>
+    <li><a href="#s6">Demo</a></li>
+    <li><a href="#s7">Full picture</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hbg"></div>
+  <div class="hgrid"></div>
+  <div class="htag">Technical deep dive · Zepto MCP + OAuth 2.1 + PKCE</div>
+  <h1 class="hh1">How Zepto<br><span class="d">made AI</span><br><span class="c">go shopping.</span></h1>
+  <p class="hdesc">A complete walkthrough — the MCP architecture, the 4-phase auth sequence diagram, the PKCE security mechanism, visual cart widgets inside ChatGPT, and how tokens work after login.</p>
+  <div class="hchips">
+    <span class="chip hi">Model Context Protocol</span>
+    <span class="chip">OAuth 2.1</span>
+    <span class="chip">PKCE</span>
+    <span class="chip">JWT · Access &amp; Refresh tokens</span>
+    <span class="chip">Next.js Auth Portal</span>
+    <span class="chip">Quick Commerce</span>
+  </div>
+  <div class="hscroll">scroll ↓</div>
+</div>
+
+<!-- ═══════════════════════════════════
+  01 · VISION
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s1"><div class="wrap">
+  <div class="eyebrow reveal">01 · The Vision</div>
+  <h2 class="stitle reveal">What Zepto was trying to do</h2>
+  <p class="sbody reveal">AI assistants like Claude and ChatGPT are already where people spend time. Zepto's bet: instead of pulling users into the Zepto app, bring Zepto <em>into</em> the AI. Not just recommendations — full end-to-end shopping. Search the catalogue, build a cart, place an order, 10-minute delivery. All from a single conversation.</p>
+
+  <div class="quote reveal">
+    <div class="qtext">"Build me a cart for a house party this weekend"</div>
+    <div class="qmeta">— the kind of conversational prompt Zepto's MCP is built to power, end to end</div>
+  </div>
+
+  <div class="cgrid reveal">
+    <div class="card"><span class="ico">🔍</span><h3>Conversational search</h3><p>Natural language like "find a cheese that tastes like the one I had in Goa" — not keyword search. AI interprets intent and queries Zepto's live catalogue.</p></div>
+    <div class="card"><span class="ico">🛒</span><h3>Real cart building</h3><p>Not a list of links. An actual Zepto cart tied to your account, updated in real-time as the AI adds items on your behalf.</p></div>
+    <div class="card"><span class="ico">💳</span><h3>Autonomous checkout</h3><p>Started with Cash on Delivery, expanded to UPI, saved cards, wallets. The AI places the actual order — not a hand-off to an app.</p></div>
+    <div class="card"><span class="ico">🧠</span><h3>Personalisation</h3><p>Remembers your favourite brands. If you always buy Amul milk, search results surface it first — without you specifying it every time.</p></div>
+  </div>
+</div></section>
+
+<!-- ═══════════════════════════════════
+  02 · MCP
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s2"><div class="wrap">
+  <div class="eyebrow reveal">02 · The Protocol</div>
+  <h2 class="stitle reveal">MCP — the USB-C port for AI</h2>
+  <p class="sbody reveal">Model Context Protocol is an open standard that lets AI clients connect to third-party services via a simple config file. You point your AI client at an MCP server and it gains a set of callable tools. Zepto built exactly this — a shopping MCP server that exposes their catalogue, cart, and checkout as tools the AI can invoke.</p>
+
+  <div class="actors reveal">
+    <div class="actor">
+      <div class="aico" style="background:rgba(155,126,255,.12);">🤖</div>
+      <h4>AI client</h4>
+      <p>Claude, ChatGPT, or any MCP-compatible assistant. Reads the config and knows which tools to call.</p>
+    </div>
+    <div class="amid">⟷</div>
+    <div class="actor">
+      <div class="aico" style="background:rgba(200,240,74,.12);">⚡</div>
+      <h4>MCP protocol</h4>
+      <p>Standardised JSON-RPC messages. Defines how tools are described, invoked, and how results flow back.</p>
+    </div>
+    <div class="amid">⟷</div>
+    <div class="actor">
+      <div class="aico" style="background:rgba(61,235,184,.12);">🏪</div>
+      <h4>Zepto MCP server</h4>
+      <p>Exposes Zepto's shopping actions as tools. Handles auth checks, routes to catalogue, cart and checkout.</p>
+    </div>
+  </div>
+
+  <div class="eyebrow reveal" style="margin-top:52px;">Tools Zepto exposed</div>
+  <div class="tbl reveal">
+    <div class="tbl-h"><div>Tool</div><div>What it does</div><div>Type</div></div>
+    <div class="tbl-r"><div class="tfn">search()</div><div class="tdesc">Finds products from Zepto's live catalogue. Personalised — returns your preferred brands first.</div><div><span class="badge bc">Core</span></div></div>
+    <div class="tbl-r"><div class="tfn">add_to_cart()</div><div class="tdesc">Adds a product SKU + quantity to your live Zepto cart in real-time.</div><div><span class="badge bc">Core</span></div></div>
+    <div class="tbl-r"><div class="tfn">checkout()</div><div class="tdesc">Places the final order. Started with COD, later supports full payment methods including UPI.</div><div><span class="badge bc">Core</span></div></div>
+    <div class="tbl-r"><div class="tfn">send_otp()</div><div class="tdesc">Triggers an OTP SMS to the user's registered phone number to begin the login flow.</div><div><span class="badge ba">Auth</span></div></div>
+    <div class="tbl-r"><div class="tfn">verify_otp()</div><div class="tdesc">Validates the OTP entered by the user, completing the authentication step.</div><div><span class="badge ba">Auth</span></div></div>
+    <div class="tbl-r"><div class="tfn">render_cart()</div><div class="tdesc">Returns an embedded visual widget — renders a real product grid with images, prices, Add buttons inside the chat.</div><div><span class="badge bu">UX</span></div></div>
+  </div>
+</div></section>
+
+<!-- ═══════════════════════════════════
+  03 · AUTH & PKCE
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s3"><div class="wrap">
+  <div class="eyebrow reveal">03 · The Hard Part</div>
+  <h2 class="stitle reveal">OAuth 2.1 + PKCE — why it matters</h2>
+  <p class="sbody reveal">Shopping needs a logged-in user. But AI agents are "public clients" — unlike a backend server, they can't securely store a client secret. Standard OAuth would break here. Zepto solved this with OAuth 2.1 and mandatory PKCE (Proof Key for Code Exchange).</p>
+
+  <div class="psgrid reveal">
+    <div class="psc prob"><div class="pslabel">The problem</div><h3>AI agents can't keep secrets</h3><p>Traditional OAuth needs a <code>client_secret</code> stored server-side. AI clients run in user environments — memory can be inspected, network traffic intercepted. A stored secret is a liability.</p></div>
+    <div class="psc sol"><div class="pslabel">The solution</div><h3>PKCE — a one-time cryptographic proof</h3><p>Generate a random secret and its hash at the start of each login. The secret never travels over the network. Only the hash does. At exchange time, prove you had the original.</p></div>
+  </div>
+
+  <div class="eyebrow reveal" style="margin-top:60px;">Step by step — the full PKCE flow</div>
+  <div class="flow">
+
+    <div class="fstep vp reveal">
+      <div class="fleft"><div class="fnum">1</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">AI Client — internal</div>
+        <h3>Generate a secret pair, locally in memory</h3>
+        <p>Before touching Zepto's servers, the AI client generates two linked values entirely on-device. The raw verifier never leaves the client in plaintext.</p>
+        <div class="cblock">
+<span class="cc">// Generated locally, stored only in memory</span>
+<span class="ck">code_verifier</span>  = <span class="cs">"xK9mTq2rZ8pL..."</span>  <span class="cc">// random 32-byte string</span>
+<span class="ck">code_challenge</span> = SHA256(<span class="cs">code_verifier</span>)  <span class="cc">// = "7rF4aZ1..."</span>
+
+<span class="cc">// Only the hash (challenge) is safe to send over the network</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="fstep vp reveal">
+      <div class="fleft"><div class="fnum">2</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">AI Client → Zepto Auth Portal</div>
+        <h3>Send the challenge (hash), not the secret</h3>
+        <p>The client starts the OAuth flow by sending the hashed challenge to Zepto's Auth Portal. Even if intercepted, the attacker only gets the hash — useless without the original verifier.</p>
+        <div class="cblock">
+GET /oauth/authorize
+  <span class="ck">?code_challenge</span>        = <span class="cs">"7rF4aZ1..."</span>
+  <span class="ck">&code_challenge_method</span> = <span class="cs">"S256"</span>
+  <span class="ck">&client_id</span>             = <span class="cs">"zepto-mcp-client"</span>
+  <span class="ck">&redirect_uri</span>          = <span class="cs">"mcp://callback"</span>
+  <span class="ck">&scope</span>                 = <span class="cs">"cart checkout"</span>
+        </div>
+        <div class="callout cok"><span class="ci">💾</span><p>Zepto stores <code>code_challenge = "7rF4aZ1..."</code> against this session. Used to verify the client in Step 6.</p></div>
+      </div>
+    </div>
+
+    <div class="fstep vt reveal">
+      <div class="fleft"><div class="fnum">3</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">Zepto Auth Portal ← User</div>
+        <h3>User authenticates via OTP</h3>
+        <p>Zepto redirects the user to its Auth Portal (a Next.js app). The user verifies via phone OTP — Zepto's existing identity infrastructure. On success, a short-lived <code>authorization_code</code> is issued.</p>
+        <div class="cblock">
+<span class="cc">// Auth Portal flow</span>
+<span class="ck">1.</span> Zepto sends OTP → user's registered phone
+<span class="ck">2.</span> User enters OTP in the portal
+<span class="ck">3.</span> OTP validates → issues:
+     <span class="ck">authorization_code</span> = <span class="cs">"auth_9xP...k3T"</span>
+     <span class="cc">// Valid for ~60 seconds, single-use only</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="fstep vt reveal">
+      <div class="fleft"><div class="fnum">4</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">Zepto → AI Client (via redirect)</div>
+        <h3>Authorization code delivered — the intercept-risk moment</h3>
+        <p>Zepto redirects the browser to the AI client's callback URI with the authorization code. This redirect is the riskiest point — it can be intercepted by a malicious app that registered the same URI scheme.</p>
+        <div class="cblock">mcp://callback<span class="ck">?code</span>=<span class="cs">"auth_9xP...k3T"</span></div>
+        <div class="callout cerr"><span class="ci">⚠️</span><p>An attacker intercepts this redirect and steals <code>"auth_9xP...k3T"</code>. Without PKCE they'd exchange it for an access token instantly. With PKCE, they're about to hit a wall.</p></div>
+      </div>
+    </div>
+
+    <div class="fstep vp reveal">
+      <div class="fleft"><div class="fnum">5</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">AI Client → Zepto Token Endpoint</div>
+        <h3>Exchange code + verifier — the PKCE moment</h3>
+        <p>To get the actual access token, the client must send both the authorization code AND the original <code>code_verifier</code>. The attacker cannot do this — they only have the hash, not the original.</p>
+        <div class="cblock">
+<span class="cc">// Legitimate AI client</span>
+POST /oauth/token
+  <span class="ck">code</span>          = <span class="cs">"auth_9xP...k3T"</span>
+  <span class="ck">code_verifier</span> = <span class="cs">"xK9mTq2rZ8pL..."</span>  <span class="cc">← the original secret</span>
+  <span class="ck">grant_type</span>    = <span class="cs">"authorization_code"</span>
+
+<span class="cc">// Attacker's attempt</span>
+POST /oauth/token
+  <span class="ck">code</span>          = <span class="cs">"auth_9xP...k3T"</span>  <span class="cc">← stolen ✓</span>
+  <span class="ck">code_verifier</span> = <span class="cs">???</span>                  <span class="cc">← no idea ✗</span>
+        </div>
+        <div class="callout cerr"><span class="ci">⛔</span><p>The attacker is completely stuck. SHA256(anything they guess) won't equal <code>"7rF4aZ1..."</code>. Brute-forcing a 32-byte random value is computationally infeasible.</p></div>
+      </div>
+    </div>
+
+    <div class="fstep vt reveal">
+      <div class="fleft"><div class="fnum">6</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">Zepto Auth Server — verification</div>
+        <h3>Re-hash and verify — then issue tokens</h3>
+        <p>Zepto runs SHA-256 on the incoming <code>code_verifier</code> and compares it to the stored <code>code_challenge</code>. If they match, the client proved it's the same one that started the flow.</p>
+        <div class="cblock">
+SHA256(<span class="cs">"xK9mTq2rZ8pL..."</span>) = <span class="cs">"7rF4aZ1..."</span>
+stored_challenge       = <span class="cs">"7rF4aZ1..."</span>
+<span class="co">✓ Match — tokens issued!</span>
+
+{
+  <span class="ck">"access_token"</span>:  <span class="cs">"eyJ..."</span>,   <span class="cc">// short-lived JWT</span>
+  <span class="ck">"refresh_token"</span>: <span class="cs">"rft_..."</span>,  <span class="cc">// longer-lived</span>
+  <span class="ck">"expires_in"</span>:    <span class="cs">3600</span>
+}
+        </div>
+        <div class="callout cok"><span class="ci">✅</span><p>Attacker's request returns <code>400 invalid_grant</code>. The stolen code is also now invalidated — it's single-use. They get nothing.</p></div>
+      </div>
+    </div>
+
+    <div class="fstep vl reveal">
+      <div class="fleft"><div class="fnum">7</div><div class="fline"></div></div>
+      <div class="fbody">
+        <div class="factor">AI Client — shopping begins</div>
+        <h3>Access token in hand — full Zepto unlocked</h3>
+        <p>The AI client now holds tokens it uses to call Zepto's MCP tools on your behalf. Every API call carries the JWT in the Authorization header.</p>
+        <div class="cblock">
+Authorization: Bearer eyJ...
+
+<span class="ck">search</span>(<span class="cs">"cheese for a dinner party"</span>)
+<span class="ck">add_to_cart</span>(sku=<span class="cs">"ZP-9821"</span>, qty=<span class="cs">2</span>)
+<span class="ck">checkout</span>()   <span class="cc">// places the real order</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /flow -->
+</div></section>
+
+<!-- ═══════════════════════════════════
+  04 · SEQUENCE DIAGRAM (Image 1)
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s4"><div class="wrap">
+  <div class="eyebrow reveal">04 · The Real Sequence</div>
+  <h2 class="stitle reveal">4 phases, 4 actors, 17 steps</h2>
+  <p class="sbody reveal">This reconstructs the exact sequence diagram from Zepto's engineering blog. Four actors coordinate across four phases — from the first unauthenticated connection attempt all the way to a working JWT access token ready for shopping.</p>
+
+  <div class="apills reveal">
+    <span class="apill apu">👤 User</span>
+    <span class="apill apai">🤖 AI Client (ChatGPT)</span>
+    <span class="apill apm">⚡ Zepto MCP Server</span>
+    <span class="apill apauth">🔐 Auth Portal (Next.js)</span>
+    <span class="apill apotp">📱 Legacy OTP Service</span>
+  </div>
+
+  <div class="seqbox reveal">
+
+    <!-- PHASE 1 -->
+    <div class="sphase" style="background:rgba(155,126,255,.05);">
+      <div class="spdot" style="background:var(--purple);"></div>
+      <span style="color:var(--purple);">Phase 1 — Connection &amp; Discovery</span>
+      <span class="spsteps">Steps 1–4</span>
+    </div>
+    <div class="srow">
+      <div class="snum">①</div>
+      <div class="sc"><h4>"Connect to Zepto"</h4><p>User instructs the AI client to connect to Zepto's MCP server. AI attempts initial connection.</p></div>
+      <div class="sarr"><span class="sf apu">User</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apai">AI Client</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">②</div>
+      <div class="sc"><h4>Attempt connection — no token yet</h4><p>AI client hits the MCP server with no auth token. Server responds <code>401 Unauthorized</code>.</p></div>
+      <div class="sarr"><span class="sf apai">AI Client</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apm">MCP Server</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">③</div>
+      <div class="sc"><h4>Request auth configuration</h4><p>AI client queries the MCP server for OAuth discovery metadata — auth endpoint URLs, supported scopes, token endpoint location.</p></div>
+      <div class="sarr"><span class="sf apai">AI Client</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apm">MCP Server</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">④</div>
+      <div class="sc"><h4>Return auth metadata (static)</h4><p>MCP server returns static OAuth discovery doc pointing to the Auth Portal. AI client now knows where to redirect the user for login.</p></div>
+      <div class="sarr"><span class="sf apm">MCP Server</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apai">AI Client</span></div>
+    </div>
+
+    <!-- PHASE 2 -->
+    <div class="sphase" style="background:rgba(200,240,74,.04);">
+      <div class="spdot" style="background:var(--lime);"></div>
+      <span style="color:var(--lime);">Phase 2 — The Redirect</span>
+      <span class="spsteps">Steps 5–6</span>
+    </div>
+    <div class="srow">
+      <div class="snum">⑤</div>
+      <div class="sc">
+        <h4>Generate PKCE <code>code_challenge</code> (internal)</h4>
+        <p>AI client locally generates <code>code_verifier</code> (random secret) and <code>code_challenge = SHA256(verifier)</code>. Both stay in memory. Only the hash leaves the device.</p>
+      </div>
+      <div class="sarr"><span class="sf apai">AI Client</span><span style="font-size:9px;color:var(--dim);">internal</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑥</div>
+      <div class="sc">
+        <h4>Redirect to auth_url — includes <code>client_id</code> &amp; <code>code_challenge</code></h4>
+        <p>AI client sends the user's browser to the Auth Portal. The challenge is embedded as a query param. Auth Portal stores it, associates it with the session.</p>
+        <div class="cblock">
+https://auth.zepto.com/authorize
+  ?<span class="ck">client_id</span>=<span class="cs">"zepto-mcp"</span>
+  &amp;<span class="ck">code_challenge</span>=<span class="cs">"7rF4aZ1..."</span>
+  &amp;<span class="ck">code_challenge_method</span>=<span class="cs">"S256"</span>
+  &amp;<span class="ck">redirect_uri</span>=<span class="cs">"mcp://callback"</span>
+        </div>
+      </div>
+      <div class="sarr"><span class="sf apai">AI Client</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apauth">Auth Portal</span></div>
+    </div>
+
+    <!-- PHASE 3 -->
+    <div class="sphase" style="background:rgba(245,165,35,.04);">
+      <div class="spdot" style="background:var(--amber);"></div>
+      <span style="color:var(--amber);">Phase 3 — The OTP Dance</span>
+      <span class="spsteps">Steps 7–12</span>
+    </div>
+    <div class="srow">
+      <div class="snum">⑦</div>
+      <div class="sc"><h4>Landing page shown to user</h4><p>Auth Portal (Next.js) renders the Zepto login page in the browser. User sees a phone number input field.</p></div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apu">User</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑧</div>
+      <div class="sc"><h4>Trigger OTP — phone auth</h4><p>After user enters phone number, Auth Portal calls the Legacy OTP Service to dispatch an SMS to the user's registered number.</p></div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apotp">OTP Service</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑨</div>
+      <div class="sc"><h4>Send SMS to user</h4><p>Legacy OTP Service delivers the one-time code to the user's phone via SMS.</p></div>
+      <div class="sarr"><span class="sf apotp">OTP Service</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apu">User</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑩</div>
+      <div class="sc"><h4>Submit OTP</h4><p>User types the received OTP into the Auth Portal form and submits it.</p></div>
+      <div class="sarr"><span class="sf apu">User</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apauth">Auth Portal</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑪</div>
+      <div class="sc"><h4>Verify OTP</h4><p>Auth Portal forwards the submitted OTP to the Legacy OTP Service for validation.</p></div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apotp">OTP Service</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑫</div>
+      <div class="sc"><h4>Return API token (internal)</h4><p>OTP Service confirms validity and returns an internal Zepto identity token to the Auth Portal, proving the user's identity.</p></div>
+      <div class="sarr"><span class="sf apotp">OTP Service</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apauth">Auth Portal</span></div>
+    </div>
+
+    <!-- PHASE 4 -->
+    <div class="sphase" style="background:rgba(61,235,184,.04);">
+      <div class="spdot" style="background:var(--teal);"></div>
+      <span style="color:var(--teal);">Phase 4 — The Token Exchange &nbsp;<span style="color:var(--dim);font-size:9px;">(PKCE validates here)</span></span>
+      <span class="spsteps">Steps 13–17</span>
+    </div>
+    <div class="srow">
+      <div class="snum">⑬</div>
+      <div class="sc"><h4>Redirect to AI agent with "Auth Code"</h4><p>Auth Portal issues a short-lived <code>authorization_code</code> and redirects the browser to the AI client's callback. This is the intercept-risk moment PKCE defends against.</p></div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apai">AI Client</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑭</div>
+      <div class="sc"><h4>Hand off "Auth Code" to AI client</h4><p>Browser delivers the <code>authorization_code</code> to the AI client via the redirect callback URI. AI client now holds it.</p></div>
+      <div class="sarr"><span class="sf apu">Browser</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apai">AI Client</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑮</div>
+      <div class="sc">
+        <h4>POST /token — Code + PKCE <code>code_verifier</code></h4>
+        <p>AI client sends the authorization code AND the raw <code>code_verifier</code> to the token endpoint. An attacker with only the stolen code cannot complete this step.</p>
+        <div class="cblock">
+POST /oauth/token
+  <span class="ck">code</span>          = <span class="cs">"auth_9xP...k3T"</span>
+  <span class="ck">code_verifier</span> = <span class="cs">"xK9mTq2rZ8pL..."</span>  <span class="cc">← PKCE secret</span>
+  <span class="ck">grant_type</span>    = <span class="cs">"authorization_code"</span>
+        </div>
+      </div>
+      <div class="sarr"><span class="sf apai">AI Client</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apauth">Auth Portal</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑯</div>
+      <div class="sc">
+        <h4>Validate PKCE — mint scoped JWT</h4>
+        <p>Auth Portal runs <code>SHA256(code_verifier)</code> and compares to the stored challenge. On match, mints a scoped JWT access token and refresh token.</p>
+        <div class="cblock">SHA256(<span class="cs">"xK9mTq2rZ8pL..."</span>) == <span class="cs">"7rF4aZ1..."</span>  <span class="co">✓ Match</span>
+<span class="cc">// Mint JWT: scopes = cart, checkout</span></div>
+      </div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">internal</span></div>
+    </div>
+    <div class="srow">
+      <div class="snum">⑰</div>
+      <div class="sc">
+        <h4>Returns access token (JWT) to AI client</h4>
+        <p>Auth Portal responds with JWT access token and refresh token. AI client stores these securely. All subsequent MCP tool calls include this JWT in the Authorization header.</p>
+        <div class="callout cok" style="margin-top:10px;"><span class="ci">✅</span><p>AI client is fully authenticated. It can now call <code>search()</code>, <code>add_to_cart()</code>, and <code>checkout()</code> on behalf of the user — with real Zepto inventory, real prices, real 10-minute delivery.</p></div>
+      </div>
+      <div class="sarr"><span class="sf apauth">Auth Portal</span><span style="font-size:9px;color:var(--dim);">→</span><span class="st apai">AI Client</span></div>
+    </div>
+
+  </div><!-- /seqbox -->
+
+  <div class="insight reveal" style="border-left-color:var(--lime);">
+    <div class="eyebrow">Why a separate Auth Portal in Next.js?</div>
+    <p>The Auth Portal is a standalone Next.js app, deliberately separate from the MCP server. This lets Zepto reuse their existing Legacy OTP identity infrastructure without rebuilding it. The MCP server stays stateless — it just says "go talk to the Auth Portal."</p>
+    <p>It became a <strong>generic OAuth socket</strong> — any future Zepto service needing user auth can plug into it without rebuilding the entire flow. One auth system for everything.</p>
+  </div>
+</div></section>
+
+<!-- ═══════════════════════════════════
+  05 · TOKENS
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s5"><div class="wrap">
+  <div class="eyebrow reveal">05 · After Login</div>
+  <h2 class="stitle reveal">Yes — the AI stores tokens. Here's why that's fine.</h2>
+  <p class="sbody reveal">After the OAuth flow, the AI client holds an access token and a refresh token. Unlike the <code>authorization_code</code> that PKCE protects during acquisition, tokens are designed to be client-held — but they come with properties that limit the damage if they're ever compromised.</p>
+
+  <div class="tokgrid reveal">
+    <div class="tokcard">
+      <div class="tokhead"><h3>Access token</h3><span class="lfp lfs">Minutes → Hours</span></div>
+      <div class="tokprop"><span class="tokk">Purpose</span><span class="tokv">Authorize every API call</span></div>
+      <div class="tokprop"><span class="tokk">Sent with</span><span class="tokv">Every MCP tool request</span></div>
+      <div class="tokprop"><span class="tokk">Format</span><span class="tokv">Signed JWT</span></div>
+      <div class="tokprop"><span class="tokk">Scope</span><span class="tokv">cart + checkout only</span></div>
+      <div class="tokprop"><span class="tokk">Lifetime</span><span class="tokv">~1 hour (expires_in: 3600)</span></div>
+      <div class="tokprop"><span class="tokk">If leaked</span><span class="tokv">~1 hr window, limited scope</span></div>
+      <div class="tokprop"><span class="tokk">Revocable</span><span class="tokv">Yes — server blacklists it</span></div>
+    </div>
+    <div class="tokcard">
+      <div class="tokhead"><h3>Refresh token</h3><span class="lfp lfl">Days → Weeks</span></div>
+      <div class="tokprop"><span class="tokk">Purpose</span><span class="tokv">Silently get new access tokens</span></div>
+      <div class="tokprop"><span class="tokk">Sent with</span><span class="tokv">Only /token refresh calls</span></div>
+      <div class="tokprop"><span class="tokk">Stored in</span><span class="tokv">OS keychain / secure storage</span></div>
+      <div class="tokprop"><span class="tokk">Rotation</span><span class="tokv">New one issued on each use</span></div>
+      <div class="tokprop"><span class="tokk">If leaked</span><span class="tokv">Serious — but server-revocable</span></div>
+      <div class="tokprop"><span class="tokk">Revocable</span><span class="tokv">Yes — user logout kills it instantly</span></div>
+      <div class="tokprop"><span class="tokk">Detection</span><span class="tokv">Rotation conflict reveals theft</span></div>
+    </div>
+  </div>
+
+  <div class="eyebrow reveal" style="margin-top:52px;">Why tokens are safer than passwords</div>
+  <div class="layers reveal">
+    <div class="layer">
+      <div class="ln">01</div>
+      <div class="lbody"><h3>Scoped, not omnipotent</h3><p>A leaked access token only grants <code>cart + checkout</code> on Zepto. A leaked password grants everything, everywhere it's reused. Scoping is the single biggest practical mitigation.</p></div>
+      <span class="lbadge ba">Scoping</span>
+    </div>
+    <div class="layer">
+      <div class="ln">02</div>
+      <div class="lbody"><h3>Short-lived by design</h3><p>Access tokens expire in ~1 hour. An attacker has a narrow window — and after expiry it's completely useless with no way to renew without the refresh token.</p></div>
+      <span class="lbadge bc">Expiry</span>
+    </div>
+    <div class="layer">
+      <div class="ln">03</div>
+      <div class="lbody"><h3>Server-side revocation</h3><p>Zepto can invalidate any refresh token instantly — on user logout, a reported compromise, or suspicious usage patterns. No password reset required.</p></div>
+      <span class="lbadge bu">Revocability</span>
+    </div>
+    <div class="layer">
+      <div class="ln">04</div>
+      <div class="lbody"><h3>Stored in OS secure storage</h3><p>MCP clients store refresh tokens in the OS keychain (macOS Keychain, Windows Credential Manager) — not in plaintext files or localStorage.</p></div>
+      <span class="lbadge ba">Storage</span>
+    </div>
+    <div class="layer">
+      <div class="ln">05</div>
+      <div class="lbody"><h3>Refresh token rotation</h3><p>Each time a refresh token is used, a new one is issued and the old one is invalidated. If a leaked token is used by an attacker, the real client's next refresh detects the conflict automatically.</p></div>
+      <span class="lbadge bc">Rotation</span>
+    </div>
+  </div>
+
+  <div class="insight reveal">
+    <div class="eyebrow">The key distinction</div>
+    <p><strong>PKCE protects the acquisition of tokens.</strong> Token properties — scope, expiry, revocability — protect against the tokens themselves being compromised. These are two separate threat surfaces, and Zepto covered both.</p>
+    <p>An attacker who intercepts the <code>authorization_code</code> redirect can't get tokens without the verifier. An attacker who somehow steals an access token can only use it for scoped actions, for a short window. Defense in layers — not a single lock.</p>
+  </div>
+</div></section>
+
+<!-- ═══════════════════════════════════
+  06 · DEMO (Image 2)
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s6"><div class="wrap">
+  <div class="eyebrow reveal">06 · It Actually Works</div>
+  <h2 class="stitle reveal">The visual cart widget — inside ChatGPT</h2>
+  <p class="sbody reveal">This is the real thing. A user typed <em>"@Zepto add popcorn to my cart"</em> into ChatGPT 5.2. The Zepto MCP server called <code>search("popcorn")</code>, fetched live results using the JWT from Phase 4, and rendered an embedded visual product grid — with images, prices, and Add buttons — directly inside the chat window. No app switching. No copy-pasting links.</p>
+
+  <div class="demo reveal">
+    <div class="dbar">
+      <div class="ddot" style="background:#FF5F57;"></div>
+      <div class="ddot" style="background:#FEBC2E;"></div>
+      <div class="ddot" style="background:#28C840;"></div>
+      <span class="dtitle">ChatGPT 5.2 · @Zepto MCP connected</span>
+    </div>
+    <div class="dinner">
+      <div class="prow">
+        <div class="pbub"><span class="at">@Zepto</span> add popcorn to my cart</div>
+      </div>
+      <div class="zwid">
+        <div class="zwhead">
+          <div class="zwlogo">Z</div>
+          <span class="zwname">Zepto</span>
+        </div>
+        <div class="ztabs">
+          <div class="ztab on">Search</div>
+          <div class="ztab">Addresses</div>
+          <div class="ztab">Cart</div>
+          <div class="ztab">Checkout</div>
+          <div class="ztab">Orders</div>
+        </div>
+        <div class="zsearch">
+          <div class="zsbar">
+            <span style="font-size:14px;">⌕</span>
+            <span>popcorn</span>
+            <div style="margin-left:auto;width:26px;height:26px;background:rgba(155,126,255,.15);border-radius:6px;display:flex;align-items:center;justify-content:center;">🛒</div>
+          </div>
+        </div>
+        <div class="zpgrid">
+          <div class="zprod">
+            <div class="zimg">🍿</div>
+            <div class="zname">Act II Instant Popcorn | Golden sizzle, Hot &amp; Fresh in 3 mins</div>
+            <div class="zwt">1 pack (35g)</div>
+            <div class="zbot"><span class="zprice">₹9</span><div class="zadd">Add</div></div>
+          </div>
+          <div class="zprod">
+            <div class="zimg">🧈</div>
+            <div class="zname">Act II Ready to Eat Popcorn | Butter Popcorn</div>
+            <div class="zwt">1 pc (47g or 50g)</div>
+            <div class="zbot"><span class="zprice">₹22</span><div class="zadd">Add</div></div>
+          </div>
+          <div class="zprod">
+            <div class="zimg">🧀</div>
+            <div class="zname">Act II Ready to Eat Popcorn | Sour Cream &amp; Cheese Popcorn</div>
+            <div class="zwt">1 pack (50g)</div>
+            <div class="zbot"><span class="zprice">₹31</span><div class="zadd">Add</div></div>
+          </div>
+          <div class="zprod">
+            <div class="zbadge">25% EXTRA</div>
+            <div class="zimg">🍿</div>
+            <div class="zname">Act II Instant Popcorn | Golden Sizzle, Family Pack, Hot &amp; Fresh…</div>
+            <div class="zwt">1 pack (112.5g)</div>
+            <div class="zbot"><span class="zprice">₹27</span><div class="zadd">Add</div></div>
+          </div>
+        </div>
+        <div class="zpbar"><div class="zpb">Ask anything</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="anns reveal">
+    <div class="ann">
+      <div class="aletter" style="background:rgba(155,126,255,.12);color:var(--purple);border-color:rgba(155,126,255,.25);">A</div>
+      <div><h4>Natural language trigger</h4><p>"@Zepto add popcorn to my cart" — user doesn't open an app. The AI interprets the intent and fires <code>search()</code> invisibly. The MCP protocol is the bridge.</p></div>
+    </div>
+    <div class="ann">
+      <div class="aletter" style="background:rgba(61,235,184,.12);color:var(--teal);border-color:rgba(61,235,184,.25);">B</div>
+      <div><h4>Embedded visual widget</h4><p>Not plain text, not a link to Zepto. A rendered product grid with images, prices, and Add buttons — living natively inside ChatGPT. This is <code>render_cart()</code> in action.</p></div>
+    </div>
+    <div class="ann">
+      <div class="aletter" style="background:rgba(200,240,74,.12);color:var(--lime);border-color:rgba(200,240,74,.25);">C</div>
+      <div><h4>Full shopping surface as tabs</h4><p>Search, Addresses, Cart, Checkout, Orders — the entire Zepto app is exposed as navigable tabs inside the widget. The AI can switch between all of them programmatically.</p></div>
+    </div>
+    <div class="ann">
+      <div class="aletter" style="background:rgba(245,165,35,.12);color:var(--amber);border-color:rgba(245,165,35,.25);">D</div>
+      <div><h4>Real catalogue, real prices</h4><p>₹9, ₹22, ₹31, ₹27 — live Zepto prices fetched via authenticated <code>search()</code>. Every request carries the JWT access token minted in Phase 4 of the auth sequence.</p></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ═══════════════════════════════════
+  07 · FULL PICTURE
+════════════════════════════════════ -->
+<hr class="div">
+<section id="s7"><div class="wrap">
+  <div class="eyebrow reveal">07 · The Complete Picture</div>
+  <h2 class="stitle reveal">Everything Zepto built — end to end</h2>
+  <p class="sbody reveal">What started as a quick experiment with three tools and COD checkout grew into a full product spanning custom OAuth, embedded UI widgets, user personalisation, and autonomous payments.</p>
+
+  <div class="fpbox reveal">
+    <div class="fphead"><h3>Zepto MCP — full feature map</h3><span class="chip" style="font-size:11px;">github.com/zeptonow/mcp</span></div>
+    <div class="fprow"><div class="fpph" style="color:var(--purple);">①</div><div class="fpname">Basic MCP server</div><div class="fpdesc">search(), add_to_cart(), COD checkout — the MVP. Full shopping flow in just 3 tools.</div><div><span class="fpst stc">Core</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--purple);">②</div><div class="fpname">OTP authentication</div><div class="fpdesc">send_otp() + verify_otp() added. Users can log in from within the AI client conversation.</div><div><span class="fpst sts">Auth</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--teal);">③</div><div class="fpname">OAuth 2.1 + PKCE</div><div class="fpdesc">Replaced bare OTP with full OAuth flow. PKCE secures public AI clients. Auth Portal becomes a reusable OAuth socket for all Zepto services.</div><div><span class="fpst sts">Security</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--teal);">④</div><div class="fpname">Access + Refresh tokens</div><div class="fpdesc">Short-lived JWT access tokens for API calls. Long-lived refresh tokens for seamless re-auth. Stored in OS keychain with rotation on every use.</div><div><span class="fpst sts">Security</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--lime);">⑤</div><div class="fpname">Visual cart widget</div><div class="fpdesc">Embedded UI rendering a real product grid inside the chat — product images, prices, Add buttons, tabs for Cart / Checkout / Orders.</div><div><span class="fpst stu">UX</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--lime);">⑥</div><div class="fpname">Personalised search</div><div class="fpdesc">Search results prioritise your favourite brands automatically. The system remembers Amul milk, Haldiram's snacks — without you specifying every time.</div><div><span class="fpst stp">Product</span></div></div>
+    <div class="fprow"><div class="fpph" style="color:var(--amber);">⑦</div><div class="fpname">Full payment support</div><div class="fpdesc">Beyond COD — UPI, saved cards, wallets. The AI completes a real end-to-end transaction including payment without leaving the chat interface.</div><div><span class="fpst stp">Product</span></div></div>
+  </div>
+
+  <div class="insight reveal" style="border-left-color:var(--lime);">
+    <div class="eyebrow">The architectural bet</div>
+    <p>Zepto's core insight: <strong>the interface layer is shifting.</strong> People don't want another app to open — they want their existing AI tools to do things. MCP is the bridge. PKCE+OAuth is what makes it trustworthy. The visual widget is what makes it feel native. Personalised search is what makes it actually useful.</p>
+    <p>The exciting frontier: conversations like <strong>"Find a cheese that tastes like the one I had in Goa"</strong> or <strong>"Build me a full cart for a house party this weekend"</strong> — where the AI's intelligence actively shapes the shopping experience, not just executes commands.</p>
+  </div>
+</div></section>
+
+<footer>
+  <div class="fleft">Zepto <em>×</em> AI — MCP Deep Dive</div>
+  <div class="fright">Source: blog.zeptonow.com · github.com/zeptonow/mcp</div>
+</footer>
+
+<script>
+const obs=new IntersectionObserver(e=>{e.forEach(n=>{if(n.isIntersecting){n.target.classList.add('in');obs.unobserve(n.target)}})},{threshold:.07});
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+</script>
+</body>
+</html>
