@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Razorpay Notification System — Deep Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8e8f0;
+    --muted: #7070a0;
+    --accent: #7c6bff;
+    --accent2: #ff6b6b;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+    --teal: #2dd4bf;
+    --pink: #f472b6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    width: 800px; height: 800px;
+    background: radial-gradient(circle, rgba(124,107,255,0.12) 0%, transparent 70%);
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    pointer-events: none;
+  }
+
+  .hero-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(124,107,255,0.3);
+    padding: 6px 16px;
+    border-radius: 100px;
+    margin-bottom: 32px;
+    display: inline-block;
+  }
+
+  .hero h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(36px, 6vw, 72px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin-bottom: 20px;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero-sub {
+    color: var(--muted);
+    font-size: 17px;
+    max-width: 520px;
+    margin-bottom: 48px;
+  }
+
+  .hero-scroll {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: bounce 2s ease-in-out infinite;
+  }
+
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
+
+  /* ── NAV DOTS ── */
+  .nav-dots {
+    position: fixed;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 100;
+  }
+
+  .nav-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border2);
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+  }
+
+  .nav-dot.active { background: var(--accent); transform: scale(1.4); }
+
+  /* ── SECTIONS ── */
+  .section {
+    min-height: 100vh;
+    padding: 80px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .container { max-width: 960px; width: 100%; }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(28px, 4vw, 48px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  .section-body {
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 620px;
+    margin-bottom: 48px;
+    line-height: 1.8;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  .card-sm {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+
+  /* ── CHIP ── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-weight: 500;
+  }
+
+  .chip-green  { background: rgba(74,222,128,0.12);  color: var(--green);  border: 1px solid rgba(74,222,128,0.25);  }
+  .chip-red    { background: rgba(255,107,107,0.12); color: var(--accent2);border: 1px solid rgba(255,107,107,0.25); }
+  .chip-amber  { background: rgba(251,191,36,0.12);  color: var(--amber);  border: 1px solid rgba(251,191,36,0.25);  }
+  .chip-blue   { background: rgba(96,165,250,0.12);  color: var(--blue);   border: 1px solid rgba(96,165,250,0.25);  }
+  .chip-purple { background: rgba(124,107,255,0.12); color: var(--accent); border: 1px solid rgba(124,107,255,0.25); }
+  .chip-teal   { background: rgba(45,212,191,0.12);  color: var(--teal);   border: 1px solid rgba(45,212,191,0.25);  }
+
+  /* ── FLOW DIAGRAM ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    row-gap: 16px;
+  }
+
+  .flow-node {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: all 0.3s;
+    cursor: default;
+  }
+
+  .flow-node:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
+  .flow-node.highlight { border-color: var(--accent); background: rgba(124,107,255,0.1); }
+  .flow-node.new-node { border-color: var(--green); background: rgba(74,222,128,0.08); color: var(--green); }
+
+  .flow-arrow {
+    color: var(--muted);
+    font-size: 18px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── CHALLENGE CARDS ── */
+  .challenges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .challenge-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    transition: all 0.3s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .challenge-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .challenge-card:hover { border-color: var(--border2); transform: translateY(-3px); }
+  .challenge-card:hover::before { opacity: 1; }
+  .challenge-card.c1::before { background: var(--accent2); }
+  .challenge-card.c2::before { background: var(--amber); }
+  .challenge-card.c3::before { background: var(--blue); }
+  .challenge-card.c4::before { background: var(--pink); }
+  .challenge-card.c5::before { background: var(--teal); }
+
+  .challenge-icon { font-size: 28px; margin-bottom: 12px; }
+  .challenge-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .challenge-desc { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+  /* ── INTERACTIVE WEBHOOK DEMO ── */
+  .webhook-demo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 640px) { .webhook-demo { grid-template-columns: 1fr; } }
+
+  .terminal {
+    background: #0d1117;
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  .terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-red { background: #ff5f57; }
+  .dot-amber { background: #febc2e; }
+  .dot-green { background: #28c840; }
+
+  .terminal-title { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .terminal-line { margin: 4px 0; }
+  .t-green { color: var(--green); }
+  .t-blue  { color: var(--blue); }
+  .t-amber { color: var(--amber); }
+  .t-muted { color: var(--muted); }
+  .t-red   { color: var(--accent2); }
+  .t-purple{ color: var(--accent); }
+
+  /* ── DB BOTTLENECK INTERACTIVE ── */
+  .db-sim {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+
+  .workers-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+    margin: 16px 0;
+  }
+
+  .worker-box {
+    aspect-ratio: 1;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    transition: all 0.4s;
+  }
+
+  .worker-box.active { background: rgba(74,222,128,0.15); border-color: var(--green); color: var(--green); }
+  .worker-box.blocked { background: rgba(255,107,107,0.15); border-color: var(--accent2); color: var(--accent2); }
+  .worker-box.waiting { background: rgba(251,191,36,0.1); border-color: var(--amber); color: var(--amber); }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 12px 0;
+  }
+
+  .slider-label { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); min-width: 140px; }
+  .slider-val   { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); min-width: 40px; text-align: right; }
+
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border2);
+    outline: none;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .stat-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ── QUEUE PRIORITY DEMO ── */
+  .queue-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 640px) { .queue-board { grid-template-columns: 1fr; } }
+
+  .queue-col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .queue-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .queue-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; }
+  .queue-body { padding: 12px; min-height: 200px; }
+
+  .queue-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.5s;
+    animation: slideIn 0.3s ease;
+  }
+
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes slideOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(10px); } }
+
+  .queue-item.processing { border-color: var(--green); background: rgba(74,222,128,0.08); }
+  .queue-item.rogue { border-color: var(--accent2); background: rgba(255,107,107,0.08); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text);
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #9580ff; border-color: #9580ff; color: #fff; }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+
+  /* ── QOS DEMO ── */
+  .qos-meter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+  }
+
+  .qos-name { font-family: 'JetBrains Mono', monospace; font-size: 12px; min-width: 100px; }
+
+  .qos-bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .qos-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease, background 0.4s;
+  }
+
+  .qos-score { font-family: 'JetBrains Mono', monospace; font-size: 12px; min-width: 30px; text-align: right; }
+  .qos-badge { font-size: 11px; min-width: 28px; text-align: center; }
+
+  /* ── KINESIS EXPLAINER ── */
+  .kinesis-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .kinesis-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .kinesis-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 90px;
+  }
+
+  .kinesis-pipe {
+    flex: 1;
+    height: 36px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kinesis-fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    border-radius: 8px;
+    transition: width 0.6s ease;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  /* ── TIMELINE ── */
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 10px; top: 8px; bottom: 8px;
+    width: 1px;
+    background: linear-gradient(to bottom, var(--accent), transparent);
+  }
+
+  .timeline-item { position: relative; margin-bottom: 32px; }
+  .timeline-dot {
+    position: absolute;
+    left: -27px; top: 4px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+
+  .timeline-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .timeline-body { color: var(--muted); font-size: 13px; }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    padding: 60px 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border2), transparent);
+    margin: 0 auto;
+    max-width: 960px;
+  }
+
+  /* animations */
+  .fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.6s, transform 0.6s; }
+  .fade-in.visible { opacity: 1; transform: none; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- NAV DOTS -->
+<nav class="nav-dots" id="navDots">
+  <button class="nav-dot active" data-section="0" title="Intro"></button>
+  <button class="nav-dot" data-section="1" title="What is a Webhook"></button>
+  <button class="nav-dot" data-section="2" title="Old Architecture"></button>
+  <button class="nav-dot" data-section="3" title="Challenges"></button>
+  <button class="nav-dot" data-section="4" title="DB Bottleneck"></button>
+  <button class="nav-dot" data-section="5" title="Priority Queues"></button>
+  <button class="nav-dot" data-section="6" title="New Architecture"></button>
+  <button class="nav-dot" data-section="7" title="QoS System"></button>
+  <button class="nav-dot" data-section="8" title="Who is a Merchant"></button>
+</nav>
+
+<!-- ══ HERO ══ -->
+<section class="hero" id="s0">
+  <div class="hero-tag">Engineering Deep Dive</div>
+  <h1>Razorpay's<br><span>Notification System</span></h1>
+  <p class="hero-sub">How India's leading payments company scaled webhook delivery from breaking under load to handling millions of events reliably.</p>
+  <div class="hero-scroll">↓ scroll to explore</div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ WHAT IS A WEBHOOK ══ -->
+<section class="section" id="s1">
+  <div class="container fade-in">
+    <div class="section-label">01 — Fundamentals</div>
+    <h2 class="section-title">What is a Webhook?</h2>
+    <p class="section-body">A webhook is a reverse API — instead of you polling for data, the server pushes data to you the moment something happens.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px;">
+      <div class="card">
+        <div class="chip chip-red" style="margin-bottom:14px;">❌ Regular API (polling)</div>
+        <div class="terminal" style="background:#0a0a0f;">
+          <div class="terminal-line t-muted"># Your server asks every 30 seconds:</div>
+          <div class="terminal-line t-blue">GET /payment/status?id=pay_123</div>
+          <div class="terminal-line t-muted"># → "not yet"</div>
+          <div class="terminal-line t-blue">GET /payment/status?id=pay_123</div>
+          <div class="terminal-line t-muted"># → "not yet"</div>
+          <div class="terminal-line t-blue">GET /payment/status?id=pay_123</div>
+          <div class="terminal-line t-green"># → "paid!" (finally, 90s later)</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chip chip-green" style="margin-bottom:14px;">✓ Webhook (push)</div>
+        <div class="terminal" style="background:#0a0a0f;">
+          <div class="terminal-line t-muted"># Razorpay calls YOUR server:</div>
+          <div class="terminal-line t-green">POST https://yourstore.com/webhook</div>
+          <div class="terminal-line t-amber">{</div>
+          <div class="terminal-line t-amber">&nbsp;&nbsp;"event": "payment.success",</div>
+          <div class="terminal-line t-amber">&nbsp;&nbsp;"payment_id": "pay_123",</div>
+          <div class="terminal-line t-amber">&nbsp;&nbsp;"amount": 50000</div>
+          <div class="terminal-line t-amber">}</div>
+          <div class="terminal-line t-muted"># → instant! no polling needed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:6px;">The analogy</div>
+        <div style="color:var(--muted);font-size:13px;">Polling = calling the restaurant every 5 mins asking "is my food ready?"<br><br>Webhook = the restaurant calls <em>you</em> when your order is ready.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="chip chip-purple">reverse API</div>
+        <div class="chip chip-teal">event-driven</div>
+        <div class="chip chip-green">real-time push</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ OLD ARCHITECTURE ══ -->
+<section class="section" id="s2">
+  <div class="container fade-in">
+    <div class="section-label">02 — Old System</div>
+    <h2 class="section-title">The Original Architecture</h2>
+    <p class="section-body">Worked well initially. Broke at scale. Here's how it was structured and what each piece did.</p>
+
+    <div class="card" style="margin-bottom:24px;overflow-x:auto;">
+      <div class="flow" style="min-width:600px;padding:8px 0;">
+        <div class="flow-node">API pods</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">SQS Live Queue</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Workers</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Executors</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node" style="border-color:var(--accent2);">MySQL (direct write)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Datalake</div>
+      </div>
+      <div class="flow" style="margin-top:12px;padding-left:200px;">
+        <div class="flow-node" style="opacity:0.5;pointer-events:none;padding:6px 12px;font-size:11px;">↑ also reads failed jobs</div>
+        <div class="flow-arrow">←</div>
+        <div class="flow-node">Scheduler</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node" style="border-color:var(--accent2);">MySQL</div>
+      </div>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-title">API pods</div>
+        <div class="timeline-body">Payment event happens → API pushes a job to SQS. API returns immediately, no waiting.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-title">Workers → Executors</div>
+        <div class="timeline-body">Workers pull jobs from SQS. Executors make the actual HTTP POST to the merchant's webhook URL and wait for a response.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot" style="background:var(--accent2);"></div>
+        <div class="timeline-title">Direct MySQL write ← the problem</div>
+        <div class="timeline-body">After execution, result is written directly to MySQL. At 500+ workers, this saturates DB connections and IOPS simultaneously.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-title">Scheduler</div>
+        <div class="timeline-body">Periodically reads MySQL for failed/pending webhooks and re-queues them in SQS for retry.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ CHALLENGES ══ -->
+<section class="section" id="s3">
+  <div class="container fade-in">
+    <div class="section-label">03 — Problems Identified</div>
+    <h2 class="section-title">What Broke at Scale</h2>
+    <p class="section-body">As transactions grew exponentially, five distinct failure modes emerged. Each one needed a targeted fix.</p>
+
+    <div class="challenges-grid">
+      <div class="challenge-card c1">
+        <div class="challenge-icon">💥</div>
+        <div class="challenge-title">DB Connection Bottleneck</div>
+        <div class="challenge-desc">MySQL has a hard limit on concurrent connections (~300). 500 workers all writing simultaneously = 200 workers blocked, queuing, and spiking latency from 2s → 4s.</div>
+      </div>
+      <div class="challenge-card c2">
+        <div class="challenge-icon">📈</div>
+        <div class="challenge-title">Traffic Spikes</div>
+        <div class="challenge-desc">IPL, Big Billion Day, Quarter Close — unpredictable bursts that overwhelm a system designed for average load. Auto-scaling workers made DB worse.</div>
+      </div>
+      <div class="challenge-card c3">
+        <div class="challenge-icon">🗄️</div>
+        <div class="challenge-title">Read Degradation</div>
+        <div class="challenge-desc">100M+ rows in the webhook table. Queries slow even with indexes. Data no longer fits in RAM → reads hit disk. Replica also lags under high write pressure.</div>
+      </div>
+      <div class="challenge-card c4">
+        <div class="challenge-icon">🚦</div>
+        <div class="challenge-title">No Priority</div>
+        <div class="challenge-desc">One SQS queue for everything. A burst of low-priority SMS events blocks critical payment webhooks. No way to say "this is urgent".</div>
+      </div>
+      <div class="challenge-card c5">
+        <div class="challenge-icon">⏳</div>
+        <div class="challenge-title">Slow Customer Servers</div>
+        <div class="challenge-desc">Workers block synchronously waiting for merchant HTTP responses. One slow merchant with 8-minute response times ties up N workers, starving everyone else.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ DB BOTTLENECK INTERACTIVE ══ -->
+<section class="section" id="s4">
+  <div class="container fade-in">
+    <div class="section-label">04 — Interactive Demo</div>
+    <h2 class="section-title">The DB Bottleneck, Visualised</h2>
+    <p class="section-body">Drag the workers slider and watch what happens when worker count exceeds DB connection limit.</p>
+
+    <div class="db-sim">
+      <div class="slider-row">
+        <span class="slider-label">Workers (auto-scaled)</span>
+        <input type="range" min="10" max="50" value="10" id="workerSlider" step="1">
+        <span class="slider-val" id="workerVal">10</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">DB connections limit</span>
+        <input type="range" min="10" max="50" value="30" id="dbSlider" step="1">
+        <span class="slider-val" id="dbVal">30</span>
+      </div>
+
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin:12px 0 6px;">Worker status grid</div>
+      <div class="workers-grid" id="workersGrid"></div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin:8px 0 4px;">
+        <span style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace;">■ active (has connection)</span>
+        <span style="font-size:11px;color:var(--accent2);font-family:'JetBrains Mono',monospace;">■ blocked (waiting)</span>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-val" id="activeCount" style="color:var(--green)">10</div>
+          <div class="stat-lbl">active workers</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="blockedCount" style="color:var(--accent2)">0</div>
+          <div class="stat-lbl">blocked workers</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="latencyVal" style="color:var(--amber)">1.2s</div>
+          <div class="stat-lbl">p99 latency</div>
+        </div>
+      </div>
+
+      <div id="dbWarning" style="display:none;margin-top:12px;padding:12px 16px;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent2);">
+        ⚠ Workers exceed DB connections — latency spike! SLA breached.
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ PRIORITY QUEUES ══ -->
+<section class="section" id="s5">
+  <div class="container fade-in">
+    <div class="section-label">05 — Solution 1</div>
+    <h2 class="section-title">Priority Queues + Rate Limiting</h2>
+    <p class="section-body">Split one queue into three. Add per-merchant rate limits. Watch how a rogue event gets contained.</p>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="addNormalEvents()">+ Add normal events</button>
+      <button class="btn" onclick="addRogueEvent()" style="border-color:var(--accent2);color:var(--accent2);">💥 Trigger rogue burst</button>
+      <button class="btn" onclick="clearQueues()">↺ Reset</button>
+    </div>
+
+    <div class="queue-board" id="queueBoard">
+      <div class="queue-col">
+        <div class="queue-header">
+          <span class="queue-title">P0 — Critical</span>
+          <span class="chip chip-red" style="font-size:10px;">highest</span>
+        </div>
+        <div class="queue-body" id="q0"></div>
+      </div>
+      <div class="queue-col">
+        <div class="queue-header">
+          <span class="queue-title">P1 — Default</span>
+          <span class="chip chip-amber" style="font-size:10px;">normal</span>
+        </div>
+        <div class="queue-body" id="q1"></div>
+      </div>
+      <div class="queue-col">
+        <div class="queue-header">
+          <span class="queue-title">P2 — Burst / Overflow</span>
+          <span class="chip chip-blue" style="font-size:10px;">low</span>
+        </div>
+        <div class="queue-body" id="q2"></div>
+      </div>
+    </div>
+
+    <div class="card-sm" style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);" id="queueLog">
+      → Click buttons above to simulate events
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ NEW ARCHITECTURE ══ -->
+<section class="section" id="s6">
+  <div class="container fade-in">
+    <div class="section-label">06 — Solution 2</div>
+    <h2 class="section-title">Kinesis Buffers the DB</h2>
+    <p class="section-body">Inserting Kinesis between executors and MySQL decouples write speed from DB capacity. The DB write rate stays flat regardless of traffic.</p>
+
+    <div class="card" style="margin-bottom:24px;overflow-x:auto;">
+      <div class="flow" style="min-width:640px;padding:8px 0;flex-wrap:nowrap;">
+        <div class="flow-node">API</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">SQS (P0/P1/P2)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Workers</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Executors</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node new-node">Kinesis ✦ new</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node new-node">DB Writer</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">MySQL</div>
+      </div>
+    </div>
+
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;">Live write pressure simulation</div>
+
+    <div class="card" style="margin-bottom:20px;" id="kinesisDemo">
+      <div class="kinesis-flow">
+        <div class="kinesis-row">
+          <span class="kinesis-label">Executors</span>
+          <div class="kinesis-pipe">
+            <div class="kinesis-fill" id="kExec" style="background:rgba(124,107,255,0.4);width:20%;"></div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:60px;" id="kExecLbl">20 /s</span>
+        </div>
+        <div class="kinesis-row">
+          <span class="kinesis-label" style="color:var(--green);">Kinesis buffer</span>
+          <div class="kinesis-pipe">
+            <div class="kinesis-fill" id="kBuf" style="background:rgba(74,222,128,0.35);width:20%;"></div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:60px;" id="kBufLbl">absorbing</span>
+        </div>
+        <div class="kinesis-row">
+          <span class="kinesis-label" style="color:var(--blue);">MySQL writes</span>
+          <div class="kinesis-pipe">
+            <div class="kinesis-fill" id="kDB" style="background:rgba(96,165,250,0.4);width:20%;"></div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:60px;" id="kDBLbl">20 /s</span>
+        </div>
+      </div>
+      <div class="slider-row" style="margin-top:16px;">
+        <span class="slider-label">Traffic spike</span>
+        <input type="range" min="5" max="100" value="20" id="kinesisSlider" oninput="updateKinesis(this.value)">
+        <span class="slider-val" id="kinesisVal">20</span>
+      </div>
+      <div id="kinesisNote" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-top:8px;">MySQL write rate stays constant — workers unblocked</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="card-sm">
+        <div class="chip chip-purple" style="margin-bottom:10px;">Kinesis also fans out</div>
+        <div style="font-size:13px;color:var(--muted);">Same stream feeds DB Writer, Datalake Publisher, and future NoSQL consumer independently.</div>
+      </div>
+      <div class="card-sm">
+        <div class="chip chip-teal" style="margin-bottom:10px;">Retry queue separated</div>
+        <div style="font-size:13px;color:var(--muted);">Failed webhooks go to their own SQS queue — retries never compete with live traffic.</div>
+      </div>
+      <div class="card-sm">
+        <div class="chip chip-green" style="margin-bottom:10px;">Workers unblocked</div>
+        <div style="font-size:13px;color:var(--muted);">Workers write to Kinesis (fast, in-memory) not MySQL. No more connection saturation.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ QOS ══ -->
+<section class="section" id="s7">
+  <div class="container fade-in">
+    <div class="section-label">07 — Solution 3</div>
+    <h2 class="section-title">Quality of Service (QoS)</h2>
+    <p class="section-body">Each merchant gets a QoS score based on their server's response time. Slow merchants are auto-demoted. Fast merchants are auto-promoted. Watch it live.</p>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="runQoSRound()">▶ Simulate webhook round</button>
+      <button class="btn" onclick="resetQoS()">↺ Reset scores</button>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:10px 16px;align-items:center;margin-bottom:4px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">Merchant</span>
+        <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">QoS score</span>
+        <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">Score</span>
+        <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">Queue</span>
+      </div>
+      <div id="qosMeters"></div>
+    </div>
+
+    <div class="card-sm" style="font-family:'JetBrains Mono',monospace;font-size:12px;" id="qosLog">
+      → Click "Simulate webhook round" to see QoS in action
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+      <div class="card-sm">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:6px;font-size:13px;">Demotion rule</div>
+        <div style="font-size:13px;color:var(--muted);">Response time > 5 min → score drops. Score ≤ 3 → moved to P2. Events still delivered, just slower.</div>
+      </div>
+      <div class="card-sm">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:6px;font-size:13px;">Promotion rule</div>
+        <div style="font-size:13px;color:var(--muted);">Probe sent every N mins. Fast response → score rises. Score ≥ 8 → promoted back to P0. Fully automatic.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══ WHO IS A MERCHANT ══ -->
+<section class="section" id="s8">
+  <div class="container fade-in">
+    <div class="section-label">08 — The Big Picture</div>
+    <h2 class="section-title">Who is the Merchant?</h2>
+    <p class="section-body">In simple terms — a merchant is any business that uses Razorpay to accept payments. Swiggy, Zomato, Flipkart — they are all merchants. You are the customer. Here's how it all connects.</p>
+
+    <!-- Transaction flow -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px;color:var(--muted);">Step 1 — You pay on Swiggy</div>
+      <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:12px;overflow-x:auto;padding-bottom:4px;">
+        <div style="background:var(--surface2);border:1px solid var(--blue);border-radius:10px;padding:12px 18px;text-align:center;min-width:110px;">
+          <div style="font-size:22px;margin-bottom:4px;">👤</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--blue);">YOU</div>
+          <div style="font-size:11px;color:var(--muted);">customer</div>
+        </div>
+        <div style="padding:0 6px;color:var(--muted);font-size:18px;">→</div>
+        <div style="background:var(--surface2);border:1px solid var(--amber);border-radius:10px;padding:12px 18px;text-align:center;min-width:110px;">
+          <div style="font-size:22px;margin-bottom:4px;">🛵</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--amber);">SWIGGY</div>
+          <div style="font-size:11px;color:var(--muted);">the merchant</div>
+        </div>
+        <div style="padding:0 6px;color:var(--muted);font-size:18px;">→</div>
+        <div style="background:var(--surface2);border:1px solid var(--accent);border-radius:10px;padding:12px 18px;text-align:center;min-width:110px;">
+          <div style="font-size:22px;margin-bottom:4px;">⚡</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);">RAZORPAY</div>
+          <div style="font-size:11px;color:var(--muted);">payment gateway</div>
+        </div>
+        <div style="padding:0 6px;color:var(--muted);font-size:18px;">→</div>
+        <div style="background:var(--surface2);border:1px solid var(--green);border-radius:10px;padding:12px 18px;text-align:center;min-width:110px;">
+          <div style="font-size:22px;margin-bottom:4px;">🏦</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green);">YOUR BANK</div>
+          <div style="font-size:11px;color:var(--muted);">debits money</div>
+        </div>
+        <div style="padding:0 6px;color:var(--muted);font-size:18px;">→</div>
+        <div style="background:rgba(74,222,128,0.1);border:1px solid var(--green);border-radius:10px;padding:12px 18px;text-align:center;min-width:110px;">
+          <div style="font-size:22px;margin-bottom:4px;">✅</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green);">CONFIRMED</div>
+          <div style="font-size:11px;color:var(--muted);">payment done</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Webhook moment -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px;color:var(--muted);">Step 2 — Razorpay must tell Swiggy</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Bank confirmed payment → Razorpay fires a webhook to Swiggy's server. This is THE webhook call.</div>
+
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center;">
+        <div style="background:var(--surface2);border:1px solid var(--accent);border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:4px;">Razorpay</div>
+          <div style="font-size:12px;color:var(--muted);">payment gateway</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent2);white-space:nowrap;">POST /webhook</div>
+          <div style="font-size:24px;color:var(--accent2);">→</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap;">HTTP call</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--amber);border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:4px;">Swiggy's Server</div>
+          <div style="font-size:12px;color:var(--muted);">merchant's endpoint</div>
+        </div>
+      </div>
+
+      <div class="terminal" style="margin-top:16px;">
+        <div class="terminal-header">
+          <div class="dot dot-red"></div><div class="dot dot-amber"></div><div class="dot dot-green"></div>
+          <span class="terminal-title">webhook payload Razorpay sends to Swiggy</span>
+        </div>
+        <div class="terminal-line t-blue">POST https://api.swiggy.com/webhooks/razorpay</div>
+        <div class="terminal-line t-amber">{</div>
+        <div class="terminal-line t-amber">&nbsp;&nbsp;"event": <span class="t-green">"payment.success"</span>,</div>
+        <div class="terminal-line t-amber">&nbsp;&nbsp;"payment_id": <span class="t-green">"pay_ORD789"</span>,</div>
+        <div class="terminal-line t-amber">&nbsp;&nbsp;"amount": <span class="t-purple">45000</span>,</div>
+        <div class="terminal-line t-amber">&nbsp;&nbsp;"customer": <span class="t-green">"you@gmail.com"</span>,</div>
+        <div class="terminal-line t-amber">&nbsp;&nbsp;"order_id": <span class="t-green">"ORD_789"</span></div>
+        <div class="terminal-line t-amber">}</div>
+        <div class="terminal-line" style="margin-top:8px;"><span class="t-muted"># Swiggy responds with:</span></div>
+        <div class="terminal-line t-green">HTTP 200 OK  ← "got it, thanks"</div>
+      </div>
+    </div>
+
+    <!-- What Swiggy does with it -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px;color:var(--muted);">Step 3 — Swiggy acts on the webhook</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div class="card-sm" style="display:flex;align-items:center;gap:14px;">
+          <div style="font-size:20px;">1️⃣</div>
+          <div><span style="color:var(--text);font-weight:500;">Mark order as paid</span> <span style="color:var(--muted);font-size:13px;">— update Swiggy's database</span></div>
+        </div>
+        <div class="card-sm" style="display:flex;align-items:center;gap:14px;">
+          <div style="font-size:20px;">2️⃣</div>
+          <div><span style="color:var(--text);font-weight:500;">Notify the restaurant</span> <span style="color:var(--muted);font-size:13px;">— "start preparing this order"</span></div>
+        </div>
+        <div class="card-sm" style="display:flex;align-items:center;gap:14px;">
+          <div style="font-size:20px;">3️⃣</div>
+          <div><span style="color:var(--text);font-weight:500;">Send you an SMS / push notification</span> <span style="color:var(--muted);font-size:13px;">— "Order confirmed!"</span></div>
+        </div>
+        <div class="card-sm" style="display:flex;align-items:center;gap:14px;">
+          <div style="font-size:20px;">4️⃣</div>
+          <div><span style="color:var(--text);font-weight:500;">Assign a delivery partner</span> <span style="color:var(--muted);font-size:13px;">— all triggered by that one webhook</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Why this matters for everything above -->
+    <div class="card" style="border-color:rgba(124,107,255,0.3);background:rgba(124,107,255,0.05);">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;margin-bottom:12px;">Why this connects back to everything we discussed</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="card-sm">
+          <div class="chip chip-red" style="margin-bottom:8px;">Slow merchant server</div>
+          <div style="font-size:13px;color:var(--muted);">When Swiggy's webhook endpoint is slow to respond with 200 OK, Razorpay's workers block waiting. That's the QoS problem.</div>
+        </div>
+        <div class="card-sm">
+          <div class="chip chip-amber" style="margin-bottom:8px;">Rogue burst</div>
+          <div style="font-size:13px;color:var(--muted);">During Big Billion Day, Flipkart fires 500k webhooks at once — flooding the queue. That's the rate limiter problem.</div>
+        </div>
+        <div class="card-sm">
+          <div class="chip chip-purple" style="margin-bottom:8px;">Retry logic</div>
+          <div style="font-size:13px;color:var(--muted);">If Swiggy's server is down and returns 500, Razorpay retries the webhook so Swiggy never misses a payment event.</div>
+        </div>
+        <div class="card-sm">
+          <div class="chip chip-green" style="margin-bottom:8px;">SLA matters</div>
+          <div style="font-size:13px;color:var(--muted);">If Razorpay can't deliver webhooks fast, Swiggy doesn't know you paid → your order never gets placed. That's why SLAs are non-negotiable.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Polling vs Webhook analogy -->
+    <div class="card" style="margin-top:20px;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;margin-bottom:8px;">The restaurant analogy</div>
+        <div style="color:var(--muted);font-size:13px;line-height:1.8;">
+          <span style="color:var(--accent2);">Without webhook (polling):</span> Swiggy calls Razorpay every 5 seconds — "did the customer pay yet? did they pay yet? did they pay yet?"<br><br>
+          <span style="color:var(--green);">With webhook:</span> Razorpay calls Swiggy the moment payment is confirmed — "payment done, here are the details." One call, instant.
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:160px;">
+        <div class="chip chip-amber">Swiggy = merchant</div>
+        <div class="chip chip-purple">Razorpay = gateway</div>
+        <div class="chip chip-blue">You = customer</div>
+        <div class="chip chip-green">Webhook = callback</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  built from the Razorpay engineering blog · concepts: webhooks, SQS, Kinesis, MySQL, QoS, rate limiting, merchants
+</footer>
+
+<script>
+// ── INTERSECTION OBSERVER ──
+const faders = document.querySelectorAll('.fade-in');
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+faders.forEach(f => io.observe(f));
+
+// ── NAV DOTS ──
+const sections = ['s0','s1','s2','s3','s4','s5','s6','s7','s8'];
+const dots = document.querySelectorAll('.nav-dot');
+
+dots.forEach(d => {
+  d.addEventListener('click', () => {
+    document.getElementById('s' + d.dataset.section).scrollIntoView({ behavior: 'smooth' });
+  });
+});
+
+const sio = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const idx = sections.indexOf(e.target.id);
+      dots.forEach((d,i) => d.classList.toggle('active', i === idx));
+    }
+  });
+}, { threshold: 0.5 });
+sections.forEach(s => { const el = document.getElementById(s); if (el) sio.observe(el); });
+
+// ── DB BOTTLENECK SIM ──
+const workerSlider = document.getElementById('workerSlider');
+const dbSlider = document.getElementById('dbSlider');
+
+function updateDB() {
+  const workers = parseInt(workerSlider.value);
+  const dbCap   = parseInt(dbSlider.value);
+  document.getElementById('workerVal').textContent = workers;
+  document.getElementById('dbVal').textContent = dbCap;
+
+  const grid = document.getElementById('workersGrid');
+  grid.innerHTML = '';
+  const total = 50;
+  const active  = Math.min(workers, dbCap);
+  const blocked = Math.max(0, workers - dbCap);
+
+  for (let i = 0; i < total; i++) {
+    const box = document.createElement('div');
+    box.className = 'worker-box';
+    if (i < active) { box.className += ' active'; box.textContent = 'W'; }
+    else if (i < workers) { box.className += ' blocked'; box.textContent = '!'; }
+    grid.appendChild(box);
+  }
+
+  document.getElementById('activeCount').textContent = active;
+  document.getElementById('blockedCount').textContent = blocked;
+
+  const ratio = workers / dbCap;
+  let latency;
+  if (ratio <= 1) latency = (1 + ratio * 0.5).toFixed(1) + 's';
+  else latency = (2 + (ratio - 1) * 4).toFixed(1) + 's';
+
+  const latEl = document.getElementById('latencyVal');
+  latEl.textContent = latency;
+  latEl.style.color = ratio > 1 ? 'var(--accent2)' : 'var(--amber)';
+
+  document.getElementById('dbWarning').style.display = blocked > 0 ? 'block' : 'none';
+}
+
+workerSlider.addEventListener('input', updateDB);
+dbSlider.addEventListener('input', updateDB);
+updateDB();
+
+// ── PRIORITY QUEUE SIM ──
+const merchants = ['Swiggy','Zomato','Flipkart','CRED','PhonePe','Meesho'];
+const eventTypes = ['payment.success','payment.failed','refund.processed','subscription.charged'];
+let queueCounts = { p0: 0, p1: 0, p2: 0 };
+const RATE_LIMIT = 3;
+let merchantCounts = {};
+
+function makeItem(merchant, type, cls='') {
+  const div = document.createElement('div');
+  div.className = 'queue-item ' + cls;
+  div.innerHTML = `<span>${merchant}</span><span style="color:var(--muted);font-size:11px;">${type}</span>`;
+  return div;
+}
+
+function logQ(msg) { document.getElementById('queueLog').textContent = '→ ' + msg; }
+
+function addNormalEvents() {
+  const m = merchants[Math.floor(Math.random() * merchants.length)];
+  const t = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+  const q = Math.random() < 0.3 ? 'q0' : 'q1';
+  const qEl = document.getElementById(q);
+  if (qEl.children.length < 8) {
+    qEl.appendChild(makeItem(m, t));
+    logQ(`${m} → ${t} added to ${q === 'q0' ? 'P0' : 'P1'}`);
+    setTimeout(() => { if (qEl.firstChild) qEl.removeChild(qEl.firstChild); }, 2500);
+  }
+}
+
+function addRogueEvent() {
+  const rogue = 'Flipkart';
+  const q0 = document.getElementById('q0');
+  const q2 = document.getElementById('q2');
+  let allowed = 0, overflowed = 0;
+  merchantCounts[rogue] = merchantCounts[rogue] || 0;
+
+  for (let i = 0; i < 12; i++) {
+    setTimeout(() => {
+      if (merchantCounts[rogue] < RATE_LIMIT) {
+        merchantCounts[rogue]++;
+        if (q0.children.length < 8) {
+          q0.appendChild(makeItem(rogue, 'payment.success', 'rogue'));
+          allowed++;
+          setTimeout(() => { if (q0.lastChild) q0.removeChild(q0.lastChild); }, 3000);
+        }
+      } else {
+        if (q2.children.length < 8) {
+          q2.appendChild(makeItem(rogue, 'payment.success'));
+          overflowed++;
+          setTimeout(() => { if (q2.lastChild) q2.removeChild(q2.lastChild); }, 4000);
+        }
+      }
+      if (i === 11) {
+        logQ(`Flipkart burst: ${RATE_LIMIT} → P0, rest → P2 (rate limited). Other merchants unaffected.`);
+        merchantCounts[rogue] = 0;
+      }
+    }, i * 80);
+  }
+}
+
+function clearQueues() {
+  ['q0','q1','q2'].forEach(id => document.getElementById(id).innerHTML = '');
+  merchantCounts = {};
+  logQ('Queues cleared');
+}
+
+// ── KINESIS DEMO ──
+function updateKinesis(val) {
+  const v = parseInt(val);
+  document.getElementById('kinesisVal').textContent = v;
+  const execPct = Math.min(v, 100);
+  const dbPct   = Math.min(30, v); // capped — kinesis absorbs spike
+
+  document.getElementById('kExec').style.width = execPct + '%';
+  document.getElementById('kBuf').style.width  = Math.min(execPct * 0.8, 90) + '%';
+  document.getElementById('kDB').style.width   = dbPct + '%';
+
+  document.getElementById('kExecLbl').textContent = v + ' /s';
+  document.getElementById('kDBLbl').textContent   = dbPct + ' /s';
+
+  const note = document.getElementById('kinesisNote');
+  const kBuf = document.getElementById('kBuf');
+  if (v > 40) {
+    note.textContent = '✦ Spike absorbed by Kinesis — MySQL still sees steady ' + dbPct + '/s write rate';
+    note.style.color = 'var(--green)';
+    kBuf.style.background = 'rgba(74,222,128,0.5)';
+  } else {
+    note.textContent = 'MySQL write rate stays constant — workers unblocked';
+    note.style.color = 'var(--muted)';
+    kBuf.style.background = 'rgba(74,222,128,0.35)';
+  }
+}
+
+// ── QOS DEMO ──
+const qosMerchants = [
+  { name: 'Swiggy',    score: 9, responseMs: 800,   isSlowing: false },
+  { name: 'Zomato',    score: 7, responseMs: 1200,  isSlowing: false },
+  { name: 'Flipkart',  score: 5, responseMs: 3000,  isSlowing: true  },
+  { name: 'SlowCo',    score: 2, responseMs: 360000, isSlowing: true  },
+  { name: 'CRED',      score: 8, responseMs: 950,   isSlowing: false },
+];
+
+function scoreColor(s) {
+  if (s >= 8) return 'var(--green)';
+  if (s >= 5) return 'var(--amber)';
+  return 'var(--accent2)';
+}
+
+function queueForScore(s) {
+  if (s >= 8) return { label: 'P0', cls: 'chip-green' };
+  if (s >= 4) return { label: 'P1', cls: 'chip-amber' };
+  return { label: 'P2', cls: 'chip-red' };
+}
+
+function renderQoS() {
+  const el = document.getElementById('qosMeters');
+  el.innerHTML = '';
+  qosMerchants.forEach(m => {
+    const q = queueForScore(m.score);
+    const pct = m.score * 10;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;gap:10px 16px;align-items:center;margin:10px 0;';
+    row.innerHTML = `
+      <span class="qos-name">${m.name}</span>
+      <div class="qos-bar-track">
+        <div class="qos-bar-fill" style="width:${pct}%;background:${scoreColor(m.score)};"></div>
+      </div>
+      <span class="qos-score" style="color:${scoreColor(m.score)}">${m.score}/10</span>
+      <span class="chip ${q.cls}" style="font-size:10px;">${q.label}</span>
+    `;
+    el.appendChild(row);
+  });
+}
+
+function runQoSRound() {
+  const logs = [];
+  qosMerchants.forEach(m => {
+    const threshold = 300000; // 5 min in ms
+    if (m.responseMs > threshold) {
+      const old = m.score;
+      m.score = Math.max(0, m.score - 2);
+      logs.push(`${m.name}: ${(m.responseMs/60000).toFixed(0)}min response → score ${old}→${m.score} ${m.score <= 3 ? '→ demoted P2' : ''}`);
+    } else {
+      const old = m.score;
+      m.score = Math.min(10, m.score + 1);
+      if (old < 8 && m.score >= 8) logs.push(`${m.name}: fast response → score ${old}→${m.score} → promoted P0! 🎉`);
+      else logs.push(`${m.name}: ${m.responseMs}ms → score ${old}→${m.score} ✓`);
+    }
+  });
+  renderQoS();
+  document.getElementById('qosLog').innerHTML = logs.map(l => `→ ${l}`).join('<br>');
+}
+
+function resetQoS() {
+  qosMerchants[0].score = 9; qosMerchants[1].score = 7;
+  qosMerchants[2].score = 5; qosMerchants[3].score = 2; qosMerchants[4].score = 8;
+  renderQoS();
+  document.getElementById('qosLog').textContent = '→ Scores reset';
+}
+
+renderQoS();
+</script>
+</body>
+</html>
