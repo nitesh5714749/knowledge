@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KIP-932 — Queues for Kafka</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0f0a;
+  --surface: #141710;
+  --surface2: #1c2018;
+  --border: #2a2e26;
+  --border2: #363b30;
+  --accent: #a8c44a;
+  --accent2: #6b9e2a;
+  --amber: #d4983a;
+  --red: #c0463a;
+  --blue: #4a8fc0;
+  --purple: #8b6ec0;
+  --text: #dde8c8;
+  --muted: #7a8870;
+  --faint: #3a4035;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+/* NAV */
+nav {
+  position: fixed; top:0; left:0; right:0; z-index:100;
+  background: rgba(12,15,10,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex; align-items: center; gap: 0;
+  height: 52px;
+}
+.nav-logo {
+  font-family: 'Fraunces', serif;
+  font-size: 17px;
+  color: var(--accent);
+  margin-right: 2rem;
+  white-space: nowrap;
+}
+.nav-links { display:flex; gap:0; overflow-x:auto; }
+.nav-links a {
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0 14px;
+  height: 52px;
+  display: flex; align-items: center;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+  font-family: 'DM Mono', monospace;
+}
+.nav-links a:hover { color: var(--text); border-color: var(--border2); }
+.nav-links a.active { color: var(--accent); border-color: var(--accent); }
+
+/* LAYOUT */
+.page { padding-top: 52px; }
+section {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 5rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+section:last-child { border-bottom: none; }
+
+/* HERO */
+#hero {
+  min-height: calc(100vh - 52px);
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 6rem 2rem 4rem;
+  position: relative;
+  overflow: hidden;
+}
+#hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 40% at 80% 50%, rgba(168,196,74,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--accent2);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+}
+h1 {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  font-weight: 300;
+  line-height: 1.15;
+  color: var(--text);
+  margin-bottom: 1.5rem;
+  max-width: 700px;
+}
+h1 em { font-style: italic; color: var(--accent); }
+.hero-desc {
+  font-size: 16px;
+  color: var(--muted);
+  max-width: 520px;
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+}
+.hero-toc {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.toc-chip {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 5px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.toc-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* HEADINGS */
+h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 1.9rem;
+  font-weight: 300;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+  line-height: 1.25;
+}
+h2 .num {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--accent2);
+  display: block;
+  margin-bottom: 6px;
+  letter-spacing: 0.1em;
+}
+h3 {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 2rem 0 0.75rem;
+}
+p { color: var(--muted); margin-bottom: 1rem; line-height: 1.75; }
+p strong { color: var(--text); font-weight: 500; }
+
+/* CODE */
+code {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--accent);
+}
+pre {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 1rem 0;
+}
+pre .cm { color: var(--muted); }
+pre .hl { color: var(--accent); }
+pre .am { color: var(--amber); }
+pre .rd { color: var(--red); }
+pre .bl { color: var(--blue); }
+
+/* CALLOUT */
+.callout {
+  border-left: 3px solid var(--accent2);
+  background: var(--surface);
+  padding: 1rem 1.25rem;
+  border-radius: 0 6px 6px 0;
+  margin: 1.25rem 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.callout.warn { border-left-color: var(--amber); }
+.callout.danger { border-left-color: var(--red); }
+.callout strong { color: var(--text); }
+
+/* TABLE */
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; margin: 1.25rem 0;
+}
+th {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border2);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  vertical-align: top;
+}
+td:first-child { color: var(--text); font-weight: 500; }
+tr:last-child td { border-bottom: none; }
+
+/* INTERACTIVE — share group demo */
+.demo-area {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+.demo-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1rem;
+}
+.btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { border-color: var(--accent2); color: var(--accent); }
+.btn:disabled { opacity: 0.35; cursor: default; }
+.btn.primary { background: rgba(168,196,74,0.12); border-color: var(--accent2); color: var(--accent); }
+.btn.primary:hover { background: rgba(168,196,74,0.2); }
+
+/* OFFSET CELLS */
+.offset-row { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px; }
+.ocell {
+  width:54px; min-width:54px; border-radius:4px;
+  padding:6px 4px 5px; border:1px solid var(--border);
+  background:var(--surface2);
+  display:flex; flex-direction:column; align-items:center;
+  transition: all 0.3s; font-family:'DM Mono',monospace;
+}
+.ocell.archv { background:var(--surface); border-color:var(--border); opacity:0.45; }
+.ocell.avail { background:rgba(168,196,74,0.1); border-color:rgba(168,196,74,0.4); }
+.ocell.acqrd { background:rgba(212,152,58,0.12); border-color:rgba(212,152,58,0.4); }
+.ocell.acked { background:rgba(74,143,192,0.1); border-color:rgba(74,143,192,0.4); }
+.ocell.stuck { background:rgba(192,70,58,0.12); border-color:rgba(192,70,58,0.4); }
+.ocell .oc-off  { font-size:11px; color:var(--muted); }
+.ocell .oc-st   { font-size:10px; margin-top:2px; }
+.ocell .oc-who  { font-size:9px; min-height:11px; margin-top:1px; }
+.ocell.avail .oc-st { color:var(--accent); }
+.ocell.acqrd .oc-st { color:var(--amber); }
+.ocell.acqrd .oc-who { color:var(--amber); }
+.ocell.acked .oc-st { color:var(--blue); }
+.ocell.stuck .oc-st { color:var(--red); }
+.ocell.stuck .oc-who { color:var(--red); }
+
+.marker-row { display:flex; gap:4px; margin-bottom:8px; }
+.om { width:54px; min-width:54px; font-family:'DM Mono',monospace; font-size:9px; text-align:center; height:14px; }
+.om.spso { color:var(--accent); }
+.om.speo { color:var(--amber); }
+
+.win-row { display:flex; gap:4px; margin-bottom:3px; }
+.wb { height:3px; width:54px; min-width:54px; border-radius:2px; background:transparent; transition:background 0.3s; }
+.wb.on { background:rgba(74,143,192,0.5); }
+
+.ptr-badges { display:flex; gap:12px; font-family:'DM Mono',monospace; font-size:12px; margin-bottom:10px; }
+.badge { padding:2px 10px; border-radius:2px; font-size:11px; }
+.badge.s { background:rgba(168,196,74,0.12); color:var(--accent); border:1px solid rgba(168,196,74,0.3); }
+.badge.e { background:rgba(212,152,58,0.12); color:var(--amber); border:1px solid rgba(212,152,58,0.3); }
+
+.expl-box {
+  font-size:13px; color:var(--muted); line-height:1.7;
+  padding:10px 14px; margin:10px 0;
+  border-left:2px solid var(--accent2);
+  background:rgba(168,196,74,0.04);
+  border-radius:0 4px 4px 0;
+  min-height:48px;
+}
+.expl-box b { color:var(--text); font-weight:500; }
+.expl-box .ok { color:var(--accent); font-weight:500; }
+.expl-box .warn { color:var(--amber); font-weight:500; }
+.expl-box .bad { color:var(--red); font-weight:500; }
+
+.state-table {
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:4px; overflow:hidden; margin-top:10px;
+}
+.st-head {
+  font-family:'DM Mono',monospace; font-size:10px;
+  color:var(--muted); background:var(--surface);
+  padding:5px 12px; border-bottom:1px solid var(--border);
+  text-transform:uppercase; letter-spacing:0.1em;
+}
+.st-body {
+  display:grid; grid-template-columns:repeat(4,1fr);
+  padding:8px 12px; gap:4px; font-family:'DM Mono',monospace; font-size:12px;
+}
+.st-label { color:var(--muted); font-size:10px; }
+.st-val { color:var(--text); font-weight:500; }
+
+/* cons grid */
+.cons-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:1.5rem 0; }
+@media(max-width:600px){ .cons-grid { grid-template-columns:1fr; } }
+.con-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:1rem 1.25rem;
+}
+.con-card.severe { border-left:3px solid var(--red); }
+.con-card.medium { border-left:3px solid var(--amber); }
+.con-card.low    { border-left:3px solid var(--muted); }
+.con-title { font-weight:500; color:var(--text); font-size:14px; margin-bottom:6px; }
+.con-body  { font-size:13px; color:var(--muted); line-height:1.6; }
+
+/* scene tabs */
+.scene-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+.stab {
+  font-family:'DM Mono',monospace; font-size:11px;
+  padding:5px 12px; border-radius:3px;
+  border:1px solid var(--border2); background:var(--surface2);
+  color:var(--muted); cursor:pointer; transition:all 0.15s;
+}
+.stab:hover { border-color:var(--accent2); color:var(--text); }
+.stab.active { background:rgba(168,196,74,0.12); border-color:var(--accent2); color:var(--accent); }
+
+/* legend */
+.legend { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; font-size:12px; color:var(--muted); }
+.ldot {
+  display:inline-block; width:10px; height:10px;
+  border-radius:2px; margin-right:5px; vertical-align:middle;
+}
+.ldot.archv { background:var(--surface2); border:1px solid var(--border2); }
+.ldot.avail { background:rgba(168,196,74,0.3); }
+.ldot.acqrd { background:rgba(212,152,58,0.3); }
+.ldot.acked { background:rgba(74,143,192,0.3); }
+.ldot.stuck { background:rgba(192,70,58,0.3); }
+
+/* log */
+.log {
+  font-family:'DM Mono',monospace; font-size:11px;
+  color:var(--muted); height:80px; overflow-y:auto;
+  padding:8px 10px; background:var(--bg);
+  border:1px solid var(--border); border-radius:4px; margin-top:8px;
+}
+.log-ok  { color:var(--accent); }
+.log-rel { color:var(--amber); }
+.log-rej { color:var(--red); }
+.log-inf { color:var(--blue); }
+
+/* nav progress */
+.step-nav { display:flex; gap:8px; align-items:center; margin-top:12px; }
+.slbl { font-family:'DM Mono',monospace; font-size:11px; color:var(--muted); }
+
+/* stat cards */
+.stat-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+.stat-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:4px; padding:8px 12px; text-align:center;
+}
+.stat-lbl { font-size:10px; color:var(--muted); font-family:'DM Mono',monospace; text-transform:uppercase; letter-spacing:0.05em; }
+.stat-val { font-size:22px; font-weight:300; font-family:'Fraunces',serif; color:var(--text); }
+
+/* ack panel */
+.ack-panel {
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:4px; padding:8px 12px; margin-top:8px;
+  font-size:13px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.ack-title { color:var(--text); font-weight:500; flex:1; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">KIP-932</div>
+  <div class="nav-links">
+    <a href="#problem" class="nav-link">01 · Problem</a>
+    <a href="#sharegroups" class="nav-link">02 · Share Groups</a>
+    <a href="#demo" class="nav-link">03 · Live Demo</a>
+    <a href="#internals" class="nav-link">04 · Internals</a>
+    <a href="#spso" class="nav-link">05 · SPSO / Window</a>
+    <a href="#cons" class="nav-link">06 · Cons</a>
+  </div>
+</nav>
+
+<div class="page">
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-tag">Apache Kafka · KIP-932</div>
+  <h1>Queues for <em>Kafka</em></h1>
+  <p class="hero-desc">How share groups bring true queue semantics to Kafka — per-message acknowledgement, cooperative consumption, and a sliding window tracked by the share-partition leader.</p>
+  <div class="hero-toc">
+    <a href="#problem" class="toc-chip">The problem</a>
+    <a href="#sharegroups" class="toc-chip">Share groups</a>
+    <a href="#demo" class="toc-chip">Interactive demo</a>
+    <a href="#internals" class="toc-chip">Internal tracking</a>
+    <a href="#spso" class="toc-chip">Sliding window</a>
+    <a href="#cons" class="toc-chip">Cons & trade-offs</a>
+  </div>
+</section>
+
+<!-- 01 PROBLEM -->
+<section id="problem">
+  <h2><span class="num">01</span>The problem with consumer groups</h2>
+  <p>Kafka's normal consumer groups assign partitions exclusively — one partition to exactly one consumer. This causes two fundamental problems for job queue use cases.</p>
+
+  <pre>
+<span class="cm">-- Normal consumer group (3 consumers, 1 partition)</span>
+Topic: [<span class="hl">P0</span>]   [P1]   [P2]
+         |      |      |
+        <span class="hl">C1</span>     C2     C3   ← each consumer owns exactly one partition
+
+<span class="cm">-- What if you only have 1 partition?</span>
+Topic: [<span class="hl">P0</span>]
+         |
+        <span class="hl">C1</span>   <span class="rd">C2 (idle)</span>   <span class="rd">C3 (idle)</span>   ← 2 consumers doing nothing</pre>
+
+  <div class="callout warn">
+    <strong>Over-partitioning problem:</strong> To get 10 workers processing a topic in parallel, you need at least 10 partitions. Changing partition count is expensive and risky on live topics.
+  </div>
+
+  <table>
+    <tr><th>Limitation</th><th>Impact</th></tr>
+    <tr><td>Max consumers = partition count</td><td>Can't scale consumers independently</td></tr>
+    <tr><td>Offset-based ack only</td><td>Can't retry a single failed message</td></tr>
+    <tr><td>Rebalance on consumer join/leave</td><td>Processing pauses during scale events</td></tr>
+    <tr><td>No per-message delivery tracking</td><td>No poison message detection</td></tr>
+  </table>
+</section>
+
+<!-- 02 SHARE GROUPS -->
+<section id="sharegroups">
+  <h2><span class="num">02</span>Share groups — the solution</h2>
+  <p>KIP-932 introduces <strong>share groups</strong> — a new kind of consumer group where multiple consumers can pull from the same partition simultaneously. The partition is no longer exclusively owned.</p>
+
+  <pre>
+<span class="cm">-- Share group (5 consumers, 1 partition)</span>
+Topic: [<span class="hl">P0</span>]
+         |
+   ┌─────┼─────┐
+  <span class="hl">C1</span>   <span class="hl">C2</span>   <span class="hl">C3</span>   <span class="hl">C4</span>   <span class="hl">C5</span>   ← all 5 consumers get work
+
+<span class="cm">-- Each consumer gets individual messages, not partitions</span>
+msg #1 → C1     msg #4 → C4
+msg #2 → C2     msg #5 → C5
+msg #3 → C3     msg #6 → C1 (finished, picks up next)</pre>
+
+  <div class="callout">
+    <strong>Key difference:</strong> The share-partition leader on the broker decides which consumer gets which message. Consumers no longer own partitions — they just request work.
+  </div>
+
+  <h3>Per-message acknowledgement</h3>
+  <p>Instead of committing an offset (marking everything before it as done), each message is acked individually with one of three outcomes:</p>
+
+  <pre>
+consumer.acknowledge(record, <span class="hl">AcknowledgeType.ACCEPT</span>);   <span class="cm">// done ✓</span>
+consumer.acknowledge(record, <span class="am">AcknowledgeType.RELEASE</span>);   <span class="cm">// give to someone else ↺</span>
+consumer.acknowledge(record, <span class="rd">AcknowledgeType.REJECT</span>);    <span class="cm">// unprocessable, delivery count++ ✕</span>
+
+<span class="cm">// acks are batched in memory, sent on:</span>
+consumer.<span class="bl">commitAsync</span>();</pre>
+
+  <table>
+    <tr><th>Feature</th><th>Consumer group</th><th>Share group</th></tr>
+    <tr><td>Partition assignment</td><td>Exclusive (1 consumer)</td><td>Shared (all consumers)</td></tr>
+    <tr><td>Max consumers</td><td>= partition count</td><td>Unlimited</td></tr>
+    <tr><td>Acknowledgement</td><td>Offset commit</td><td>Per-message</td></tr>
+    <tr><td>Ordering</td><td>Guaranteed per partition</td><td>None</td></tr>
+    <tr><td>Crash recovery</td><td>Rebalance</td><td>Lock timer expiry</td></tr>
+    <tr><td>Retry single msg</td><td>Not possible</td><td>Release / reject</td></tr>
+  </table>
+</section>
+
+<!-- 03 LIVE DEMO -->
+<section id="demo">
+  <h2><span class="num">03</span>Live demo — share group in action</h2>
+  <p>Send messages to the topic and see how the share-partition leader dispatches them across 5 consumers from a single partition. Click a consumer to ack its in-flight message.</p>
+
+  <div class="demo-area">
+    <div class="demo-title">Topic: orders · 1 partition · share group: chefs</div>
+
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn primary" onclick="demoSend()">+ Send message</button>
+      <button class="btn" onclick="demoSend5()">+ Send 5</button>
+      <button class="btn" onclick="demoReset()">Reset</button>
+    </div>
+
+    <!-- consumers -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="demo-consumers"></div>
+
+    <!-- ack panel -->
+    <div class="ack-panel" id="demo-ack-panel" style="display:none">
+      <span class="ack-title" id="demo-ack-title"></span>
+      <button class="btn" style="border-color:rgba(168,196,74,0.5);color:var(--accent)" onclick="demoAck('accept')">✓ Accept</button>
+      <button class="btn" style="border-color:rgba(212,152,58,0.5);color:var(--amber)" onclick="demoAck('release')">↺ Release</button>
+      <button class="btn" style="border-color:rgba(192,70,58,0.5);color:var(--red)" onclick="demoAck('reject')">✕ Reject</button>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-lbl">sent</div><div class="stat-val" id="d-sent">0</div></div>
+      <div class="stat-card"><div class="stat-lbl">in-flight</div><div class="stat-val" id="d-inflight">0</div></div>
+      <div class="stat-card"><div class="stat-lbl">resolved</div><div class="stat-val" id="d-done">0</div></div>
+    </div>
+
+    <div class="log" id="demo-log">Ready. Hit "+ Send message" to dispatch to the share group.</div>
+  </div>
+</section>
+
+<!-- 04 INTERNALS -->
+<section id="internals">
+  <h2><span class="num">04</span>How the leader tracks state</h2>
+  <p>The share-partition leader is a broker-side component co-located with the partition leader. It maintains an in-memory table of every offset in the active window.</p>
+
+  <h3>Per-offset state table</h3>
+  <pre>
+<span class="cm">// What the leader stores for each offset in the window</span>
+{
+  offset: <span class="hl">4</span>,
+  state: <span class="am">"Acquired"</span>,
+  consumer_id: <span class="bl">"consumer-3"</span>,
+  delivery_count: <span class="hl">1</span>,
+  lock_expiry: <span class="am">now + share.record.lock.duration.ms</span>
+}</pre>
+
+  <h3>Four message states</h3>
+  <table>
+    <tr><th>State</th><th>Meaning</th><th>Next state</th></tr>
+    <tr><td>Available</td><td>Ready to be dispatched to a consumer</td><td>Acquired</td></tr>
+    <tr><td>Acquired</td><td>Held by a consumer, lock timer running</td><td>Acknowledged / Available / Archived</td></tr>
+    <tr><td>Acknowledged</td><td>Successfully processed</td><td>Archived (when SPSO advances)</td></tr>
+    <tr><td>Archived</td><td>Done — removed from window</td><td>—</td></tr>
+  </table>
+
+  <h3>The lock timer — crash safety</h3>
+  <p>Every Acquired message has a timer. If the consumer crashes and never acks, the timer fires and the message automatically returns to Available. The leader doesn't need the consumer to do anything.</p>
+
+  <pre>
+<span class="cm">// Config: how long a consumer can hold a message</span>
+share.record.lock.duration.ms = <span class="am">30000</span>   <span class="cm">// 30 seconds default</span>
+
+<span class="cm">// If lock expires:</span>
+state: Acquired → <span class="hl">Available</span>
+delivery_count: <span class="am">1 → 2</span>
+
+<span class="cm">// If delivery_count hits the limit (default 5):</span>
+state: Acquired → <span class="rd">Archived</span>   <span class="cm">// message silently dropped</span></pre>
+
+  <h3>Durability — the __share_group_state topic</h3>
+  <p>This entire state is periodically checkpointed to an internal Kafka topic <code>__share_group_state</code> via the share coordinator. If the broker crashes, the state is replayed from this topic on restart — no messages are lost.</p>
+
+  <pre>
+<span class="cm">// State persisted as snapshots + incremental updates</span>
+ShareSnapshot  { spso, states[] }       <span class="cm">← full checkpoint</span>
+ShareUpdate    { offset, new_state }    <span class="cm">← incremental delta</span>
+
+<span class="cm">// On broker restart:</span>
+1. Read latest ShareSnapshot from __share_group_state
+2. Replay all ShareUpdate records after it
+3. Rebuild in-memory state table</pre>
+</section>
+
+<!-- 05 SPSO WINDOW -->
+<section id="spso">
+  <h2><span class="num">05</span>The sliding window — SPSO &amp; SPEO</h2>
+  <p>The share-partition leader manages a <strong>sliding window</strong> of in-flight offsets bounded by two pointers: <strong>SPSO</strong> (Share Partition Start Offset) and <strong>SPEO</strong> (Share Partition End Offset).</p>
+
+  <pre>
+SPSO = leftmost offset still being tracked (first unarchived)
+SPEO = rightmost offset currently dispatched
+
+Everything before SPSO  → Archived (done, out of window)
+Everything after  SPEO  → Not yet fetched
+Everything between      → In the window (Available / Acquired / Acknowledged)</pre>
+
+  <div class="callout warn">
+    <strong>The critical rule:</strong> SPSO advances to the first offset that is NOT yet resolved. It scans left-to-right and stops at the first Acquired offset. It cannot jump over holes.
+  </div>
+
+  <h3>Interactive — step through three scenarios</h3>
+
+  <div class="demo-area">
+    <div class="scene-tabs">
+      <button class="stab active" onclick="loadScene(0,this)">Happy path</button>
+      <button class="stab" onclick="loadScene(1,this)">Hole in middle</button>
+      <button class="stab" onclick="loadScene(2,this)">Crashed consumer</button>
+    </div>
+
+    <div class="legend">
+      <span><span class="ldot archv"></span>Archived</span>
+      <span><span class="ldot avail"></span>Available</span>
+      <span><span class="ldot acqrd"></span>Acquired</span>
+      <span><span class="ldot acked"></span>Acknowledged</span>
+      <span><span class="ldot stuck"></span>Stuck/crashed</span>
+    </div>
+
+    <div class="offset-row" id="sc-cells"></div>
+    <div class="win-row"    id="sc-win"></div>
+    <div class="marker-row" id="sc-markers"></div>
+
+    <div class="ptr-badges">
+      SPSO <span class="badge s" id="sc-spso">—</span>
+      SPEO <span class="badge e" id="sc-speo">—</span>
+      <span style="font-size:12px;color:var(--muted)">window = <span id="sc-wsize" style="color:var(--text)">—</span> offsets</span>
+    </div>
+
+    <div class="expl-box" id="sc-expl"></div>
+
+    <div class="state-table">
+      <div class="st-head">Share-partition leader — in-memory state</div>
+      <div class="st-body">
+        <div class="st-label">SPSO</div>
+        <div class="st-label">SPEO</div>
+        <div class="st-label">in-flight</div>
+        <div class="st-label">window</div>
+        <div class="st-val" id="sc-v-spso">—</div>
+        <div class="st-val" id="sc-v-speo">—</div>
+        <div class="st-val" id="sc-v-inf">—</div>
+        <div class="st-val" id="sc-v-win">—</div>
+      </div>
+    </div>
+
+    <div class="step-nav">
+      <button class="btn" id="sc-prev" onclick="scStep(-1)">← Prev</button>
+      <button class="btn primary" id="sc-next" onclick="scStep(1)">Next →</button>
+      <span class="slbl" id="sc-lbl"></span>
+    </div>
+  </div>
+
+  <h3>Why SPSO can't jump over holes</h3>
+  <p>The leader must archive offsets in order because Kafka's log is sequential. If it archived offset 5 while offset 3 was still in-flight, and offset 3 later needed to be redelivered, the leader would have no way to track it — it's already outside the window. The left-to-right scan guarantees every offset is either resolved or still tracked.</p>
+
+  <pre>
+<span class="cm">// SPSO advance algorithm (pseudo-code)</span>
+function advanceSPSO():
+  while stateTable[spso].state in (Acknowledged, Archived):
+    stateTable[spso].state = <span class="hl">Archived</span>
+    <span class="hl">spso++</span>
+  <span class="cm">// stops at first Acquired or Available offset</span></pre>
+</section>
+
+<!-- 06 CONS -->
+<section id="cons">
+  <h2><span class="num">06</span>Cons &amp; trade-offs</h2>
+  <p>Share groups are powerful but come with real limitations you need to understand before adopting them.</p>
+
+  <div class="cons-grid">
+    <div class="con-card severe">
+      <div class="con-title">No ordering guarantees</div>
+      <div class="con-body">Multiple consumers pull from the same partition. Message 7 may be processed before message 3. Any key-based ordering is gone entirely.</div>
+    </div>
+    <div class="con-card severe">
+      <div class="con-title">Slow left edge stalls window</div>
+      <div class="con-body">One slow or crashed consumer holding the leftmost offset blocks SPSO from advancing — even if all other messages are done. Memory stays allocated for the entire stalled window.</div>
+    </div>
+    <div class="con-card severe">
+      <div class="con-title">No dead letter queue (4.0/4.1)</div>
+      <div class="con-body">Messages that exceed max delivery attempts are silently archived. There is no DLQ to inspect what failed or why. You must build this yourself.</div>
+    </div>
+    <div class="con-card medium">
+      <div class="con-title">No delayed retries</div>
+      <div class="con-body">Release re-dispatches immediately — no "retry in 30s" like SQS. Poison messages can cause rapid spin-loops across all consumers until archived.</div>
+    </div>
+    <div class="con-card medium">
+      <div class="con-title">Window size cap on parallelism</div>
+      <div class="con-body"><code>group.share.partition.max.record.locks</code> caps total in-flight messages. Once hit, the leader stops dispatching until some acks come in.</div>
+    </div>
+    <div class="con-card medium">
+      <div class="con-title">No fetch-from-follower</div>
+      <div class="con-body">All reads must go through the partition leader broker. Rack-aware reads are not supported. Higher cross-rack traffic, more load on one broker.</div>
+    </div>
+    <div class="con-card low">
+      <div class="con-title">Broker-side overhead</div>
+      <div class="con-body">Per-offset state tracking, lock timers, and checkpointing to <code>__share_group_state</code> all run on the broker. Risk of noisy-neighbor effects on write throughput.</div>
+    </div>
+    <div class="con-card low">
+      <div class="con-title">Not production-ready yet</div>
+      <div class="con-body">Preview in Kafka 4.1. Record formats were unstable in 4.0 — clusters using share groups in 4.0 cannot be upgraded. Not recommended for production workloads.</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>When to use share groups:</strong> Messages are truly independent work items (no ordering dependency), you want to scale consumers beyond partition count, and you can tolerate at-least-once delivery with no guaranteed ordering.
+  </div>
+  <div class="callout warn">
+    <strong>When NOT to use:</strong> Any ordering requirement, any key-based processing dependency, or any use case needing reliable DLQ + delayed retry — use SQS, RabbitMQ, or a normal consumer group with more partitions instead.
+  </div>
+
+  <h3>Key config knobs</h3>
+  <pre>
+<span class="cm">// Broker</span>
+group.share.partition.max.record.locks = <span class="hl">200</span>    <span class="cm">// max in-flight per partition</span>
+share.record.lock.duration.ms          = <span class="am">30000</span>  <span class="cm">// crash recovery window</span>
+
+<span class="cm">// Tune lock duration carefully:</span>
+<span class="cm">//   too long  → long stalls when consumer crashes</span>
+<span class="cm">//   too short → excessive redeliveries under normal load</span>
+
+<span class="cm">// Enable (not for production)</span>
+group.coordinator.rebalance.protocols = classic,consumer,<span class="hl">share</span>
+unstable.api.versions.enable          = <span class="am">true</span>     <span class="cm">// required in 4.0</span></pre>
+</section>
+
+</div><!-- /page -->
+
+<script>
+// ─── NAV ACTIVE STATE ───────────────────────────────────────────────
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-link');
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id);
+      });
+    }
+  });
+}, { rootMargin: '-40% 0px -55% 0px' });
+sections.forEach(s => io.observe(s));
+
+// ─── DEMO (section 03) ──────────────────────────────────────────────
+const CX = [0,1,2,3,4];
+let dMsgId=0, dSent=0, dDone=0;
+let dMessages={};
+let dConsumerMsg=[null,null,null,null,null];
+let dSelected=null;
+
+function dLog(txt,cls=''){
+  const el=document.getElementById('demo-log');
+  const d=document.createElement('div');
+  d.textContent=txt; d.className=cls;
+  el.appendChild(d); el.scrollTop=el.scrollHeight;
+}
+function dUpdateStats(){
+  const inf=Object.values(dMessages).filter(m=>m.state==='inflight').length;
+  document.getElementById('d-sent').textContent=dSent;
+  document.getElementById('d-inflight').textContent=inf;
+  document.getElementById('d-done').textContent=dDone;
+}
+function dRenderConsumers(){
+  const el=document.getElementById('demo-consumers');
+  el.innerHTML='';
+  for(let i=0;i<5;i++){
+    const mid=dConsumerMsg[i];
+    const hasMsg=mid!==null;
+    const div=document.createElement('div');
+    div.style.cssText=`
+      padding:8px 12px; border-radius:4px; cursor:pointer;
+      border:1px solid ${dSelected===i?'var(--accent2)':'var(--border2)'};
+      background:${hasMsg?'rgba(212,152,58,0.08)':'var(--surface2)'};
+      font-family:'DM Mono',monospace; font-size:12px;
+      min-width:90px; transition:all 0.2s;
+    `;
+    div.innerHTML=`
+      <div style="color:var(--muted);font-size:10px;margin-bottom:3px">Consumer ${i+1}</div>
+      <div style="color:${hasMsg?'var(--amber)':'var(--muted)'}">${hasMsg?'msg #'+mid:'idle'}</div>
+    `;
+    div.onclick=()=>dSelectConsumer(i);
+    el.appendChild(div);
+  }
+}
+function dFindFree(){
+  const free=dConsumerMsg.map((v,i)=>v===null?i:-1).filter(i=>i>=0);
+  if(free.length) return free[Math.floor(Math.random()*free.length)];
+  return Math.floor(Math.random()*5);
+}
+function dSendMsg(){
+  const id=++dMsgId; dSent++;
+  const ci=dFindFree();
+  dMessages[id]={state:'inflight',consumer:ci};
+  dConsumerMsg[ci]=id;
+  dLog(`[msg #${id}] dispatched → Consumer ${ci+1}`,'log-inf');
+  dRenderConsumers(); dUpdateStats();
+}
+function dSend5(){ for(let i=0;i<5;i++) setTimeout(dSendMsg, i*120); }
+function dSelectConsumer(ci){
+  dSelected=ci;
+  const mid=dConsumerMsg[ci];
+  const panel=document.getElementById('demo-ack-panel');
+  const title=document.getElementById('demo-ack-title');
+  title.textContent=mid!==null?`Consumer ${ci+1} — holding msg #${mid}`:`Consumer ${ci+1} — no in-flight message`;
+  panel.style.display='flex';
+  dRenderConsumers();
+}
+function dAck(type){
+  if(dSelected===null) return;
+  const ci=dSelected;
+  const mid=dConsumerMsg[ci];
+  if(mid===null){ document.getElementById('demo-ack-panel').style.display='none'; return; }
+  if(type==='accept'){
+    dMessages[mid].state='acked'; dConsumerMsg[ci]=null; dDone++;
+    dLog(`[msg #${mid}] ✓ ACCEPTED by Consumer ${ci+1}`,'log-ok');
+  } else if(type==='release'){
+    dConsumerMsg[ci]=null;
+    const nci=dFindFree();
+    dConsumerMsg[nci]=mid; dMessages[mid].consumer=nci;
+    dLog(`[msg #${mid}] ↺ RELEASED by Consumer ${ci+1} → re-dispatched to Consumer ${nci+1}`,'log-rel');
+  } else {
+    dMessages[mid].state='rejected'; dConsumerMsg[ci]=null; dDone++;
+    dLog(`[msg #${mid}] ✕ REJECTED by Consumer ${ci+1} — delivery count ++`,'log-rej');
+  }
+  document.getElementById('demo-ack-panel').style.display='none';
+  dSelected=null;
+  dRenderConsumers(); dUpdateStats();
+}
+function dReset(){
+  dMsgId=0;dSent=0;dDone=0;dMessages={};
+  dConsumerMsg=[null,null,null,null,null];dSelected=null;
+  document.getElementById('demo-ack-panel').style.display='none';
+  document.getElementById('demo-log').textContent='Reset. Ready.';
+  dRenderConsumers(); dUpdateStats();
+}
+// expose
+window.demoSend=dSendMsg; window.demoSend5=dSend5;
+window.demoReset=dReset; window.demoAck=dAck;
+dRenderConsumers(); dUpdateStats();
+
+// ─── SLIDING WINDOW SCENARIOS (section 05) ──────────────────────────
+const OFFSETS=[0,1,2,3,4,5,6,7,8,9];
+const LABELS={archv:'Archv',avail:'Avail',acqrd:'Acqrd',acked:'Acked',stuck:'Stuck'};
+
+const SCENES=[
+  { steps:[
+    { states:['archv','archv','avail','avail','avail','avail','avail','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:2,speo:9,
+      expl:'<b>Starting state.</b> SPSO=2, SPEO=9. Offsets 2–9 are Available. Leader ready to dispatch.' },
+    { states:['archv','archv','acqrd','acqrd','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','C1','C2','C3','','','','',''], spso:2,speo:9,
+      expl:'<b>C1, C2, C3 acquire offsets 2, 3, 4.</b> All three are in-flight. SPSO still at 2 — nothing resolved yet.' },
+    { states:['archv','archv','acked','acqrd','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','','C2','C3','','','','',''], spso:2,speo:9,
+      expl:'<b>C1 acks offset 2.</b> Offset 2 is Acknowledged. SPSO advances to 3 immediately — 2 is now the resolved left edge, so we move past it. But 3 is still Acquired, so we stop at 3.' },
+    { states:['archv','archv','archv','acked','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','','','C3','','','','',''], spso:3,speo:9,
+      expl:'<ok>SPSO moved to 3.</ok> Offset 2 is now Archived. Now C2 acks offset 3. Offset 3 becomes Acknowledged — and 3 is the new left edge, so SPSO can advance again...' },
+    { states:['archv','archv','archv','archv','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','','','C3','','','','',''], spso:4,speo:9,
+      expl:'<ok>SPSO moves to 4.</ok> Offset 3 archived. Now the only thing blocking SPSO is C3 holding offset 4. Each ack on the left edge immediately advances SPSO by one — it does not wait.' },
+    { states:['archv','archv','archv','archv','acked','avail','avail','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:4,speo:9,
+      expl:'<b>C3 acks offset 4.</b> Left edge clears again...' },
+    { states:['archv','archv','archv','archv','archv','avail','avail','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:5,speo:9,
+      expl:'<ok>SPSO at 5.</ok> Clean happy path — every ack on the left edge immediately slides SPSO forward by 1. No stalling, no waiting for others.' },
+  ]},
+  { steps:[
+    { states:['archv','archv','acqrd','acqrd','acqrd','acqrd','acqrd','avail','avail','avail'],
+      who:['','','C1','C2','C3','C4','C5','','',''], spso:2,speo:9,
+      expl:'<b>5 consumers acquire offsets 2–6 simultaneously.</b> All in-flight. SPSO=2.' },
+    { states:['archv','archv','acqrd','acked','acked','acked','acked','avail','avail','avail'],
+      who:['','','C1','','','','','','',''], spso:2,speo:9,
+      expl:'<b>C2, C3, C4, C5 all ack quickly.</b> Offsets 3,4,5,6 are Acknowledged. But offset 2 — the LEFT EDGE — is still held by C1.' },
+    { states:['archv','archv','acqrd','acked','acked','acked','acked','avail','avail','avail'],
+      who:['','','C1 (slow)','','','','','','',''], spso:2,speo:9,
+      expl:'<warn>SPSO stuck at 2.</warn> Even though 4 out of 5 messages are done, the window has NOT moved. The leader scans: "2 is still Acquired → stop." All those Acknowledged offsets to the right are stranded, waiting.' },
+    { states:['archv','archv','acked','acked','acked','acked','acked','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:2,speo:9,
+      expl:'<b>C1 finally acks offset 2.</b> Left edge clears. The leader now scans: 2✓ 3✓ 4✓ 5✓ 6✓ — all done. Stops at 7 (Available).' },
+    { states:['archv','archv','archv','archv','archv','archv','archv','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:7,speo:9,
+      expl:'<ok>SPSO jumps from 2 → 7 in one go.</ok> All the backed-up acknowledged offsets archived at once. The window was holding all that state in memory the entire time C1 was slow.' },
+  ]},
+  { steps:[
+    { states:['archv','archv','acqrd','acqrd','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','C1','C2','C3','','','','',''], spso:2,speo:9,
+      expl:'<b>Offsets 2,3,4 acquired.</b> Each starts a lock timer = share.record.lock.duration.ms. If consumer never acks before timer fires, leader auto-releases.' },
+    { states:['archv','archv','stuck','acqrd','acqrd','avail','avail','avail','avail','avail'],
+      who:['','','C1 💀','C2','C3','','','','',''], spso:2,speo:9,
+      expl:'<warn>C1 crashes while holding offset 2 (the left edge).</warn> C2 and C3 ack normally. But SPSO cannot move — offset 2 is still "Acquired" in the leader\'s table. The leader doesn\'t know C1 is dead yet.' },
+    { states:['archv','archv','stuck','acked','acked','avail','avail','avail','avail','avail'],
+      who:['','','C1 💀','','','','','','',''], spso:2,speo:9,
+      expl:'<warn>SPSO blocked at 2.</warn> Offsets 3 and 4 are done but cannot be archived. The entire window is frozen, waiting for the lock timer on offset 2 to fire.' },
+    { states:['archv','archv','avail','acked','acked','avail','avail','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:2,speo:9,
+      expl:'<b>Lock timer fires for offset 2.</b> Leader moves it back to Available. Delivery count → 2. No action needed from C1 — the timer is the crash safety net.' },
+    { states:['archv','archv','acqrd','acked','acked','avail','avail','avail','avail','avail'],
+      who:['','','C4','','','','','','',''], spso:2,speo:9,
+      expl:'<b>Offset 2 re-dispatched to C4</b> (delivery count=2). C4 processes it successfully...' },
+    { states:['archv','archv','archv','archv','archv','avail','avail','avail','avail','avail'],
+      who:['','','','','','','','','',''], spso:5,speo:9,
+      expl:'<ok>SPSO finally advances to 5.</ok> But notice: we waited the entire lock duration before any progress resumed. Tuning share.record.lock.duration.ms is critical — too long = long stalls, too short = excessive redeliveries.' },
+  ]},
+];
+
+let scScene=0, scStep=0;
+
+function scRender(){
+  const s=SCENES[scScene].steps[scStep];
+  const steps=SCENES[scScene].steps;
+
+  const cr=document.getElementById('sc-cells'); cr.innerHTML='';
+  const wr=document.getElementById('sc-win');   wr.innerHTML='';
+  const mr=document.getElementById('sc-markers'); mr.innerHTML='';
+
+  OFFSETS.forEach((off,i)=>{
+    const c=document.createElement('div');
+    c.className='ocell '+(s.states[i]||'archv');
+    c.innerHTML=`<div class="oc-off">${off}</div><div class="oc-st">${LABELS[s.states[i]]||s.states[i]}</div><div class="oc-who">${s.who[i]||''}</div>`;
+    cr.appendChild(c);
+
+    const wb=document.createElement('div');
+    wb.className='wb'+(off>=s.spso&&off<=s.speo?' on':'');
+    wr.appendChild(wb);
+
+    const mk=document.createElement('div');
+    mk.className='om';
+    if(off===s.spso) mk.innerHTML='<span class="spso">↑ SPSO</span>';
+    else if(off===s.speo) mk.innerHTML='<span class="speo">↑ SPEO</span>';
+    mr.appendChild(mk);
+  });
+
+  document.getElementById('sc-expl').innerHTML=s.expl;
+  document.getElementById('sc-spso').textContent=s.spso;
+  document.getElementById('sc-speo').textContent=s.speo;
+  document.getElementById('sc-wsize').textContent=(s.speo-s.spso+1);
+  document.getElementById('sc-v-spso').textContent='offset '+s.spso;
+  document.getElementById('sc-v-speo').textContent='offset '+s.speo;
+  document.getElementById('sc-v-inf').textContent=s.states.filter(x=>x==='acqrd'||x==='stuck').length;
+  document.getElementById('sc-v-win').textContent=(s.speo-s.spso+1)+' offsets';
+  document.getElementById('sc-lbl').textContent=`Step ${scStep+1} / ${steps.length}`;
+  document.getElementById('sc-prev').disabled=scStep===0;
+  document.getElementById('sc-next').disabled=scStep===steps.length-1;
+}
+
+function loadScene(s,el){
+  document.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  scScene=s; scStep=0; scRender();
+}
+window.loadScene=loadScene;
+window.scStep=function(dir){
+  const steps=SCENES[scScene].steps;
+  scStep=Math.max(0,Math.min(steps.length-1,scStep+dir));
+  scRender();
+};
+scRender();
+</script>
+</body>
+</html>
