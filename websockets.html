@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebSocket Deep Dive</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.75;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1f2e, #0d1b2a);
+      border-bottom: 1px solid #2d3748;
+      padding: 60px 20px 40px;
+      text-align: center;
+    }
+
+    header .badge {
+      display: inline-block;
+      background: #1e40af22;
+      border: 1px solid #3b82f6;
+      color: #60a5fa;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 4px 14px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+
+    header h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+
+    header p {
+      color: #94a3b8;
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 50px 20px 80px;
+    }
+
+    /* ── Section ── */
+    .section {
+      margin-bottom: 60px;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: #60a5fa;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .section h2 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 14px;
+    }
+
+    .section p {
+      color: #94a3b8;
+      margin-bottom: 14px;
+    }
+
+    /* ── Callout box ── */
+    .callout {
+      background: #1e293b;
+      border-left: 4px solid #3b82f6;
+      border-radius: 0 10px 10px 0;
+      padding: 18px 22px;
+      margin: 20px 0;
+      color: #cbd5e1;
+      font-size: 0.97rem;
+    }
+
+    .callout strong { color: #93c5fd; }
+
+    /* ── Cards grid ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 22px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .card:hover {
+      border-color: #3b82f6;
+      transform: translateY(-3px);
+    }
+
+    .card .icon {
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+    }
+
+    .card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+    }
+
+    .card p {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin: 0;
+    }
+
+    /* ── Analogy box ── */
+    .analogy {
+      background: linear-gradient(135deg, #1e1b4b, #1e293b);
+      border: 1px solid #4338ca44;
+      border-radius: 12px;
+      padding: 28px;
+      margin: 24px 0;
+    }
+
+    .analogy h3 {
+      color: #a5b4fc;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .analogy p { color: #c7d2fe; margin: 0; }
+
+    /* ── Comparison ── */
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 24px 0;
+    }
+
+    @media (max-width: 560px) { .compare { grid-template-columns: 1fr; } }
+
+    .compare-box {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 22px;
+      border-top: 3px solid transparent;
+    }
+
+    .compare-box.http { border-color: #f59e0b; }
+    .compare-box.ws   { border-color: #10b981; }
+
+    .compare-box h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .compare-box.http h3 { color: #fbbf24; }
+    .compare-box.ws   h3 { color: #34d399; }
+
+    .compare-box p {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin: 0;
+    }
+
+    /* ── Estimation table ── */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 24px 0;
+      border-radius: 12px;
+      border: 1px solid #2d3748;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead tr {
+      background: #1e293b;
+    }
+
+    th {
+      padding: 14px 18px;
+      text-align: left;
+      font-weight: 600;
+      color: #60a5fa;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 13px 18px;
+      border-top: 1px solid #1e293b;
+      color: #94a3b8;
+    }
+
+    tr:hover td { background: #1e293b55; }
+
+    .highlight-row td { color: #f1f5f9; font-weight: 600; }
+    .highlight-row td:last-child { color: #34d399; }
+
+    /* ── Code block ── */
+    pre {
+      background: #0d1117;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 20px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.7;
+      margin: 20px 0;
+    }
+
+    code { color: #7dd3fc; font-family: 'Fira Code', monospace; }
+    .cm  { color: #4b5563; }
+    .kw  { color: #c084fc; }
+    .nm  { color: #fbbf24; }
+    .st  { color: #34d399; }
+    .nb  { color: #f87171; }
+
+    /* ── Memory breakdown ── */
+    .mem-bar-wrap { margin: 24px 0; }
+
+    .mem-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .mem-label {
+      width: 180px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .mem-bar-bg {
+      flex: 1;
+      background: #1e293b;
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+    }
+
+    .mem-bar {
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .mem-val {
+      width: 50px;
+      text-align: right;
+      font-size: 0.85rem;
+      color: #60a5fa;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    /* ── Tips ── */
+    .tips { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+
+    .tip {
+      display: flex;
+      gap: 16px;
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 18px;
+      border: 1px solid #2d3748;
+    }
+
+    .tip .tip-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+
+    .tip h4 { color: #e2e8f0; font-size: 0.95rem; margin-bottom: 4px; }
+    .tip p  { color: #64748b; font-size: 0.85rem; margin: 0; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 30px;
+      color: #334155;
+      font-size: 0.8rem;
+      border-top: 1px solid #1e293b;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="badge">System Design · Networking</div>
+  <h1>WebSocket Connections Deep Dive</h1>
+  <p>Understanding state, capacity, and how to estimate how many connections your server can handle.</p>
+</header>
+
+<main>
+
+  <!-- ── 1. State vs CPU ── -->
+  <section class="section">
+    <div class="section-label">Core Concept</div>
+    <h2>An Open Socket Mostly Consumes State</h2>
+    <p>
+      Most engineers instinctively fear large WebSocket numbers because they compare them to HTTP
+      requests under load. That comparison is wrong. An open socket is <strong>not</strong> an
+      active request — it's a row of state sitting in memory, waiting silently.
+    </p>
+
+    <div class="callout">
+      <strong>Key insight:</strong> 100,000 idle WebSocket connections do not mean 100,000 things
+      happening simultaneously. The CPU is mostly sleeping. The server is just <em>remembering</em>
+      those connections exist.
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="icon">📁</div>
+        <h3>File Descriptors</h3>
+        <p>Each connection gets a slot (an integer) in the OS file descriptor table. Configurable up to ~500K+.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🧠</div>
+        <h3>Kernel Buffers</h3>
+        <p>The OS allocates small send/receive buffers (~4–8 KB each) per socket to stage data.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔐</div>
+        <h3>TLS State</h3>
+        <p>Secure connections keep session keys and cipher context alive — ~50–100 KB of memory.</p>
+      </div>
+      <div class="card">
+        <div class="icon">👤</div>
+        <h3>App Metadata</h3>
+        <p>Your code stores which user owns this socket, which rooms they joined, timestamps, etc.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⚡</div>
+        <h3>No Constant CPU</h3>
+        <p>While idle, zero CPU cycles are spent on the connection. The kernel simply holds the state.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🪣</div>
+        <h3>Small App Overhead</h3>
+        <p>Framework socket objects (e.g. Node.js V8 heap) cost ~2–4 KB per connection.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2. State on both sides ── -->
+  <section class="section">
+    <div class="section-label">Architecture</div>
+    <h2>Both Client and Server Hold State</h2>
+    <p>
+      A WebSocket connection is a two-way street. Both endpoints — the browser and your server —
+      allocate and hold state for the lifetime of the connection.
+    </p>
+
+    <div class="compare">
+      <div class="compare-box http">
+        <h3>🖥️ Server Side</h3>
+        <p>
+          Holds state for <strong>every connected client</strong>. With 100K clients, the server
+          holds 100K file descriptors, 100K TLS contexts, 100K buffer pairs, and 100K
+          metadata records. This is where capacity planning matters.
+        </p>
+      </div>
+      <div class="compare-box ws">
+        <h3>💻 Client Side</h3>
+        <p>
+          Holds state for just <strong>its own connection</strong> (usually one). The cost is
+          identical per-connection, but since a browser only opens 1–2 sockets, the client
+          never feels it.
+        </p>
+      </div>
+    </div>
+
+    <div class="analogy">
+      <h3>📞 Analogy: Phone Call</h3>
+      <p>
+        Both your phone and the other person's phone are "on the call" — both hold state.
+        But the phone exchange (the server) is the one managing <em>all</em> calls at once.
+        Your phone cares about 1 call; the exchange juggles millions. Same resource cost per
+        connection, completely asymmetric burden.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── 3. HTTP vs WS ── -->
+  <section class="section">
+    <div class="section-label">Comparison</div>
+    <h2>WebSockets vs HTTP APIs Under Load</h2>
+
+    <div class="compare">
+      <div class="compare-box http">
+        <h3>⚡ HTTP API (100K req/sec)</h3>
+        <p>
+          Every request demands CPU <em>right now</em> — parse headers, query DB, serialize
+          JSON, send response, tear down. 100K req/sec = 100K units of active CPU work per second.
+          Like a restaurant with no reservations: every customer is served immediately.
+        </p>
+      </div>
+      <div class="compare-box ws">
+        <h3>🔌 WebSocket (100K connections)</h3>
+        <p>
+          Connections sit open silently. CPU only wakes up when a message arrives. If 5% are
+          active at once, you're handling 5K events/sec — not 100K. Like a hotel: 100K guests
+          checked in, but most are sleeping. Staff only responds when a guest rings.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>The C10K lesson:</strong> Old servers used one thread per connection — 10K threads
+      meant real CPU overhead (context switching). Modern event-driven servers (Node.js, Go, Nginx)
+      use <strong>epoll/kqueue</strong> — the OS only wakes the app when a socket has data.
+      One thread can serve hundreds of thousands of idle sockets.
+    </div>
+  </section>
+
+  <!-- ── 4. Estimation ── -->
+  <section class="section">
+    <div class="section-label">Capacity Planning</div>
+    <h2>How to Estimate Connection Capacity</h2>
+    <p>
+      The formula is simple: figure out what each connection costs, then divide your total
+      available resource by that cost. Do this for every dimension.
+    </p>
+
+    <p><strong style="color:#f1f5f9;">Example machine: 8 CPU cores · 16 GB RAM · 1 Gbps NIC</strong></p>
+
+    <!-- Memory breakdown -->
+    <h3 style="color:#e2e8f0; margin: 28px 0 16px; font-size:1.05rem;">Memory Per Connection</h3>
+    <div class="mem-bar-wrap">
+      <div class="mem-item">
+        <div class="mem-label">🔐 TLS State</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:60%; background:#6366f1;"></div></div>
+        <div class="mem-val">60 KB</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-label">📥 Recv Buffer</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:8%; background:#3b82f6;"></div></div>
+        <div class="mem-val">8 KB</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-label">📤 Send Buffer</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:8%; background:#3b82f6;"></div></div>
+        <div class="mem-val">8 KB</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-label">👤 App Metadata</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:3%; background:#10b981;"></div></div>
+        <div class="mem-val">3 KB</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-label">⚙️ Framework Object</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:3%; background:#10b981;"></div></div>
+        <div class="mem-val">3 KB</div>
+      </div>
+      <div class="mem-item" style="border-top: 1px solid #2d3748; padding-top: 12px;">
+        <div class="mem-label" style="color:#f1f5f9; font-weight:600;">Total (rounded)</div>
+        <div class="mem-bar-bg"><div class="mem-bar" style="width:100%; background: linear-gradient(to right, #6366f1, #3b82f6, #10b981);"></div></div>
+        <div class="mem-val" style="color:#34d399;">~100 KB</div>
+      </div>
+    </div>
+
+    <pre><code><span class="cm">// Memory calculation</span>
+<span class="kw">Total RAM      </span>= <span class="nb">16 GB</span>  =  16,384 MB
+<span class="kw">OS + App       </span>= <span class="nb"> 2 GB</span>  (reserved)
+<span class="kw">Available      </span>= <span class="nb">14 GB</span>  =  14,680,064 KB
+
+<span class="kw">Max connections</span> = 14,680,064 KB ÷ <span class="nm">100 KB</span>
+               ≈ <span class="st">146,000 connections</span></code></pre>
+
+    <!-- Full table -->
+    <h3 style="color:#e2e8f0; margin: 28px 0 16px; font-size:1.05rem;">All Dimensions at a Glance</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Available</th>
+            <th>Per Connection</th>
+            <th>Max Connections</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight-row">
+            <td>🧠 RAM</td>
+            <td>14 GB usable</td>
+            <td>~100 KB</td>
+            <td>~140,000 ⬅ binding</td>
+          </tr>
+          <tr>
+            <td>📁 File Descriptors</td>
+            <td>500K (after tuning)</td>
+            <td>1</td>
+            <td>500,000</td>
+          </tr>
+          <tr>
+            <td>🌐 Network (1 Gbps)</td>
+            <td>1,000 Mbps</td>
+            <td>~0.02 Mbps (light)</td>
+            <td>>10,000,000</td>
+          </tr>
+          <tr>
+            <td>⚙️ CPU (8 cores)</td>
+            <td>8,000 ms/sec</td>
+            <td>~0.005 ms/sec (5% active)</td>
+            <td>>1,000,000</td>
+          </tr>
+          <tr>
+            <td>🔌 Server Ports</td>
+            <td>Not a constraint</td>
+            <td>—</td>
+            <td>Unlimited</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>RAM is almost always the binding constraint.</strong> File descriptors need a one-time
+      config change. Network and CPU only become issues at extreme message rates.
+      Focus your math on memory first.
+    </div>
+  </section>
+
+  <!-- ── 5. Optimization tips ── -->
+  <section class="section">
+    <div class="section-label">Optimization</div>
+    <h2>Pushing Beyond the Limit</h2>
+    <p>Want more connections on the same hardware? Attack the memory cost per connection.</p>
+
+    <div class="tips">
+      <div class="tip">
+        <div class="tip-icon">🔐</div>
+        <div>
+          <h4>Offload TLS to a Load Balancer</h4>
+          <p>Put Nginx or HAProxy in front. Your app handles plain TCP internally, saving ~60 KB per connection — the biggest single win.</p>
+        </div>
+      </div>
+      <div class="tip">
+        <div class="tip-icon">🔧</div>
+        <div>
+          <h4>Tune Kernel Socket Buffers</h4>
+          <p>Lower <code>net.core.rmem_default</code> and <code>wmem_default</code> to 4096 bytes. This halves your buffer cost without hurting throughput for low-bandwidth connections.</p>
+        </div>
+      </div>
+      <div class="tip">
+        <div class="tip-icon">🗂️</div>
+        <div>
+          <h4>Keep App Metadata Lean</h4>
+          <p>Store only a user ID in memory. Fetch the full user record from Redis or a cache on demand. Don't embed entire objects per socket.</p>
+        </div>
+      </div>
+      <div class="tip">
+        <div class="tip-icon">📁</div>
+        <div>
+          <h4>Raise the File Descriptor Limit</h4>
+          <p>Set <code>ulimit -n 500000</code> in your systemd unit or <code>/etc/security/limits.conf</code>. Default of 1024 will kill you at small scale.</p>
+        </div>
+      </div>
+      <div class="tip">
+        <div class="tip-icon">📊</div>
+        <div>
+          <h4>Always Load-Test, Don't Trust Theory Alone</h4>
+          <p>Use tools like <strong>k6</strong>, <strong>artillery</strong>, or <strong>wrk</strong> to verify. Theory shows you what to watch; the benchmark shows when it breaks.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  WebSocket Deep Dive · State, Capacity &amp; Estimation
+</footer>
+
+</body>
+</html>

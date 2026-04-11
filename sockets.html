@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sockets — A Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f12;
+    --bg2: #131720;
+    --bg3: #1a1f2e;
+    --accent: #5ee7c2;
+    --accent2: #f7c35a;
+    --accent3: #e05e8c;
+    --text: #e8ecf0;
+    --muted: #7a8799;
+    --border: rgba(255,255,255,0.07);
+    --code-bg: #0a0c10;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  .page-wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Header / Hero */
+  header {
+    padding: 80px 0 60px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 64px;
+  }
+
+  .eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 28px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(42px, 7vw, 72px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .subtitle {
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+
+  .toc {
+    margin-top: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .toc a {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    border-radius: 100px;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* Section */
+  section {
+    margin-bottom: 72px;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  section.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    max-width: 80px;
+  }
+
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(26px, 4vw, 38px);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin-bottom: 20px;
+    color: var(--text);
+  }
+
+  h3 {
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    margin-top: 32px;
+    color: var(--text);
+  }
+
+  p {
+    color: #c2cad4;
+    margin-bottom: 18px;
+    font-size: 16px;
+  }
+
+  strong { color: var(--text); font-weight: 600; }
+
+  /* Highlight cards */
+  .callout {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 18px 22px;
+    margin: 28px 0;
+    font-size: 15px;
+    color: #b8c4d0;
+    line-height: 1.7;
+  }
+  .callout.amber { border-left-color: var(--accent2); }
+  .callout.pink  { border-left-color: var(--accent3); }
+
+  .callout-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  .callout.amber .callout-title { color: var(--accent2); }
+  .callout.pink .callout-title { color: var(--accent3); }
+
+  /* Code */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    overflow-x: auto;
+    margin: 24px 0;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #8fb8d0;
+  }
+  code {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    background: rgba(94,231,194,0.08);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  .kw  { color: #b98ef7; }
+  .fn  { color: #5ee7c2; }
+  .str { color: #f7c35a; }
+  .cm  { color: #445566; }
+  .num { color: #e05e8c; }
+
+  /* Visual diagrams */
+  .diagram {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 28px 0;
+    overflow-x: auto;
+  }
+
+  .diagram-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
+  .four-tuple {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .tuple-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .tuple-box.highlight { border-color: var(--accent2); }
+  .tuple-box .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .tuple-box .value {
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .tuple-box.highlight .value { color: var(--accent2); }
+
+  /* Connection list */
+  .conn-list { display: flex; flex-direction: column; gap: 6px; }
+  .conn-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg3);
+    border-radius: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .conn-item .port { color: var(--accent2); font-weight: 500; }
+  .conn-item .arrow { color: var(--accent); }
+  .conn-item .fixed { color: var(--accent); }
+  .conn-item .tag {
+    margin-left: auto;
+    background: rgba(94,231,194,0.1);
+    color: var(--accent);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--border);
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 24px;
+  }
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -28px;
+    top: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .tl-item.amber::before { background: var(--accent2); }
+  .tl-item.pink::before  { background: var(--accent3); }
+  .tl-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .tl-desc { font-size: 13px; color: var(--muted); }
+
+  /* Stat strip */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 28px 0;
+  }
+  .stat-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .stat-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 32px;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-num.amber { color: var(--accent2); }
+  .stat-num.pink  { color: var(--accent3); }
+  .stat-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Redis thread viz */
+  .queue-strip {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+  .q-item {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--bg3);
+  }
+  .q-item.active {
+    background: rgba(94,231,194,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .q-item.done {
+    background: rgba(94,231,194,0.05);
+    border-color: rgba(94,231,194,0.2);
+    color: rgba(94,231,194,0.4);
+    text-decoration: line-through;
+  }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 48px 0;
+    margin-top: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: gap;
+  }
+  .footer-note {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 3px; }
+
+  @media (max-width: 600px) {
+    .four-tuple { grid-template-columns: 1fr; }
+    .stat-strip { grid-template-columns: 1fr; }
+    h1 { font-size: 36px; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <header>
+    <div class="eyebrow">Systems Deep Dive</div>
+    <h1>Everything about <em>Sockets</em></h1>
+    <p class="subtitle">From TCP 4-tuples and ephemeral ports, to Redis's single-threaded event loop, to 100K WebSocket connections — the full picture.</p>
+    <nav class="toc">
+      <a href="#what-is-a-socket">What is a socket</a>
+      <a href="#four-tuple">The 4-tuple</a>
+      <a href="#ephemeral-ports">Ephemeral ports</a>
+      <a href="#keep-alive">Keep-alive</a>
+      <a href="#redis">Redis single-thread</a>
+      <a href="#epoll">epoll magic</a>
+      <a href="#websockets">100K WebSockets</a>
+      <a href="#what-breaks">What breaks first</a>
+    </nav>
+  </header>
+
+  <!-- SECTION 1 -->
+  <section id="what-is-a-socket">
+    <div class="section-label">01 — Foundations</div>
+    <h2>What even is a socket?</h2>
+    <p>A socket is just a file descriptor — a handle the OS gives your process to represent one end of a network connection. When your browser connects to a server, both sides get a socket. Data written into one end comes out the other.</p>
+    <p>Under the hood, it's a TCP connection — a reliable, ordered, bidirectional byte stream between two IP:port pairs. The OS manages the actual sending and receiving via kernel buffers. Your application just reads and writes.</p>
+
+    <div class="callout">
+      <div class="callout-title">Key insight</div>
+      An open socket is <strong>not constant work</strong>. It's state. It consumes a file descriptor, some kernel memory for buffers, and TLS state if encrypted — but zero CPU until data actually arrives. This is the most important thing most engineers miss.
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-box">
+        <div class="stat-num">~60KB</div>
+        <div class="stat-label">per idle socket (TLS + buffers)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num amber">≈0</div>
+        <div class="stat-label">CPU on idle socket</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num pink">1024</div>
+        <div class="stat-label">default fd limit (change it!)</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2 -->
+  <section id="four-tuple">
+    <div class="section-label">02 — TCP Identity</div>
+    <h2>The 4-tuple</h2>
+    <p>Here's the thing that confuses people: the server always listens on the same port (say <code>:8080</code>). So how does it tell 10,000 connections apart? The answer is — the OS doesn't identify a connection by port alone. It uses all four values together.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">A TCP connection is uniquely identified by</div>
+      <div class="four-tuple">
+        <div class="tuple-box">
+          <div class="label">Client IP</div>
+          <div class="value">192.168.1.5</div>
+        </div>
+        <div class="tuple-box highlight">
+          <div class="label">Client port — changes every request</div>
+          <div class="value">:54231</div>
+        </div>
+        <div class="tuple-box">
+          <div class="label">Server IP</div>
+          <div class="value">10.0.0.1</div>
+        </div>
+        <div class="tuple-box">
+          <div class="label">Server port — always same</div>
+          <div class="value">:8080</div>
+        </div>
+      </div>
+    </div>
+
+    <p>As long as <em>any one</em> of these four values differs, it's a completely different connection in the OS's eyes. The server port never changes, but the client port does — and that's enough.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Three requests from one client — three different connections</div>
+      <div class="conn-list">
+        <div class="conn-item">
+          <span>192.168.1.5:<span class="port">54231</span></span>
+          <span class="arrow">→</span>
+          <span>10.0.0.1:<span class="fixed">8080</span></span>
+          <span class="tag">GET /users</span>
+        </div>
+        <div class="conn-item">
+          <span>192.168.1.5:<span class="port">54232</span></span>
+          <span class="arrow">→</span>
+          <span>10.0.0.1:<span class="fixed">8080</span></span>
+          <span class="tag">POST /order</span>
+        </div>
+        <div class="conn-item">
+          <span>192.168.1.5:<span class="port">54233</span></span>
+          <span class="arrow">→</span>
+          <span>10.0.0.1:<span class="fixed">8080</span></span>
+          <span class="tag">GET /status</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3 -->
+  <section id="ephemeral-ports">
+    <div class="section-label">03 — Port Lifecycle</div>
+    <h2>Ephemeral ports and TIME_WAIT</h2>
+    <p>The OS picks those changing client ports from the <strong>ephemeral port range</strong> — on Linux this is typically <code>32768–60999</code>. That's about 28,000 ports. Once you exhaust them, new connections fail. This is called <strong>port exhaustion</strong>.</p>
+
+    <pre><code><span class="cm"># check the range on your machine</span>
+cat /proc/sys/net/ipv4/ip_local_port_range
+<span class="cm">→ 32768   60999</span>
+
+<span class="cm"># see current TCP connections</span>
+ss -tan state established
+
+<span class="cm"># check open file descriptors</span>
+ulimit -n</code></pre>
+
+    <div class="callout amber">
+      <div class="callout-title">TIME_WAIT — the silent killer</div>
+      After a TCP connection closes, the port enters <code>TIME_WAIT</code> state for ~60 seconds before being released back to the pool. If your backend service makes thousands of short-lived outbound connections per second (e.g. hitting a database without connection pooling), you will run out of ports. This is a very real production incident.
+    </div>
+
+    <p>The fix is almost always <strong>connection pooling</strong> — reuse existing connections instead of opening new ones per request. This is why every database driver, HTTP client library, and Redis client has a pool setting.</p>
+  </section>
+
+  <!-- SECTION 4 -->
+  <section id="keep-alive">
+    <div class="section-label">04 — HTTP Keep-Alive</div>
+    <h2>Keep-alive: reusing the same connection</h2>
+    <p>Without keep-alive (HTTP/1.0 style), every request pays the full TCP handshake cost: SYN → SYN-ACK → ACK. That's at least one full round-trip <em>before</em> your actual data moves. On a 50ms connection, that's 50ms of pure overhead per request.</p>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-title">Without keep-alive (HTTP/1.0)</div>
+        <div class="tl-desc">SYN → SYN-ACK → ACK → request → response → FIN. New ephemeral port every time. 3 round-trips minimum per request just for setup.</div>
+      </div>
+      <div class="tl-item amber">
+        <div class="tl-title">With keep-alive (HTTP/1.1 default)</div>
+        <div class="tl-desc">Same TCP connection reused for multiple requests. Port stays constant. Handshake paid once. HTTP/1.1 enables this by default with <code>Connection: keep-alive</code>.</div>
+      </div>
+      <div class="tl-item pink">
+        <div class="tl-title">WebSocket — the permanent upgrade</div>
+        <div class="tl-desc">One HTTP connection upgraded to WebSocket via <code>101 Switching Protocols</code>. After that, both sides can push data freely without request/response cycles. One port, forever open.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 5 -->
+  <section id="redis">
+    <div class="section-label">05 — Redis Internals</div>
+    <h2>Redis: single-threaded and blazing fast</h2>
+    <p>Redis uses <strong>one main thread</strong> for all command processing. Not two. Not a pool. One. And yet it handles hundreds of thousands of operations per second. How?</p>
+
+    <p>The trick: each command finishes in ~1–10 microseconds (pure RAM access). By the time you'd even context-switch between threads, Redis has already served 10 commands on its single thread. The overhead of locking, mutex contention, and context switches would cost <em>more</em> than the work itself.</p>
+
+    <div class="callout">
+      <div class="callout-title">The real win: no locks needed</div>
+      Because only one command runs at a time, there's no "two threads writing the same key" scenario. No mutexes. No deadlocks. No race conditions — by design. <code>INCR counter</code> called by 1000 clients will always produce exactly the right answer.
+    </div>
+
+    <h3>How 100 clients get served by 1 thread</h3>
+    <p>Redis doesn't give each client a thread. Instead it uses <code>epoll</code> to watch all client sockets simultaneously. When a socket has data ready, the OS wakes the thread. The thread processes that command, replies, then checks for the next ready socket.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Ready queue at any given moment</div>
+      <div class="queue-strip">
+        <span class="q-item done">SET name "Alice"</span>
+        <span class="q-item active">GET counter</span>
+        <span class="q-item">INCR counter</span>
+        <span class="q-item">SET key2 "Bob"</span>
+        <span class="q-item">EXPIRE k 30</span>
+        <span class="q-item">GET user:99</span>
+      </div>
+      <p style="font-size:12px; color: var(--muted); margin:0;">The thread works through this left to right, one at a time. No parallelism needed — each item takes microseconds.</p>
+    </div>
+
+    <pre><code><span class="cm"># These two commands from different clients are ALWAYS safe</span>
+<span class="cm"># because only one runs at a time</span>
+
+Client A: <span class="fn">INCR</span> counter   <span class="cm">→ counter was 5, now 6</span>
+Client B: <span class="fn">INCR</span> counter   <span class="cm">→ counter was 6, now 7</span>
+
+<span class="cm"># Never: both read 5, both write 6 (that's a multithreaded bug)</span></code></pre>
+  </section>
+
+  <!-- SECTION 6 -->
+  <section id="epoll">
+    <div class="section-label">06 — OS Machinery</div>
+    <h2>epoll: the OS watching all your sockets</h2>
+    <p>Both Redis and WebSocket servers rely on the same OS primitive: <code>epoll</code> on Linux, <code>kqueue</code> on macOS/BSD. This is the thing that makes single-threaded servers handling thousands of connections possible.</p>
+
+    <p>The pattern is simple. Instead of assigning a thread per connection (which would mean 100K threads for 100K connections — a disaster), you register all your sockets with <code>epoll</code> and ask a single question:</p>
+
+    <div class="callout">
+      <div class="callout-title">The epoll question</div>
+      "Which of my registered sockets are ready to read or write <em>right now</em>?"<br><br>
+      The OS returns only the sockets that have data. Your thread does work for those sockets and goes back to waiting. This is called <strong>non-blocking I/O</strong> or <strong>the reactor pattern</strong>.
+    </div>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-title">Thread registers 100K sockets with epoll</div>
+        <div class="tl-desc">Zero CPU cost. The kernel keeps a watch list.</div>
+      </div>
+      <div class="tl-item amber">
+        <div class="tl-title">Client sends data → kernel marks socket "readable"</div>
+        <div class="tl-desc">Hardware interrupt → kernel wakes epoll → returns the ready socket to your thread. No polling. No spinning.</div>
+      </div>
+      <div class="tl-item pink">
+        <div class="tl-title">Thread wakes, processes only that socket</div>
+        <div class="tl-desc">Reads the command or message, does the work, sends the reply. Then sleeps again. Other 99,999 sockets were undisturbed.</div>
+      </div>
+    </div>
+
+    <pre><code><span class="cm">// Node.js heartbeat — detecting dead WebSocket connections</span>
+<span class="kw">import</span> { WebSocketServer } <span class="kw">from</span> <span class="str">'ws'</span>
+
+<span class="kw">const</span> wss = <span class="kw">new</span> <span class="fn">WebSocketServer</span>({ port: <span class="num">8080</span> })
+
+wss.<span class="fn">on</span>(<span class="str">'connection'</span>, (ws) => {
+  ws.isAlive = <span class="kw">true</span>
+  ws.<span class="fn">on</span>(<span class="str">'pong'</span>, () => { ws.isAlive = <span class="kw">true</span> })
+})
+
+<span class="fn">setInterval</span>(() => {
+  <span class="kw">for</span> (<span class="kw">const</span> ws <span class="kw">of</span> wss.clients) {
+    <span class="kw">if</span> (!ws.isAlive) { ws.<span class="fn">terminate</span>(); <span class="kw">continue</span> }
+    ws.isAlive = <span class="kw">false</span>
+    ws.<span class="fn">ping</span>()   <span class="cm">// if no pong in 30s → dead</span>
+  }
+}, <span class="num">30000</span>)
+</code></pre>
+  </section>
+
+  <!-- SECTION 7 -->
+  <section id="websockets">
+    <div class="section-label">07 — Scale</div>
+    <h2>100K WebSocket connections</h2>
+    <p>Yes — a system like Discord really does maintain ~100K (or more) live WebSocket connections at once. And yes, one user on a laptop, phone, and browser tab counts as 3 connections. A reconnect creates a new session. A dead mobile connection may linger as a ghost session until heartbeat timeout.</p>
+
+    <div class="callout pink">
+      <div class="callout-title">The crucial distinction</div>
+      <strong>Connection count ≠ message rate.</strong> 100K open sockets is a memory problem (~6GB). 100K messages/second is a CPU + fanout problem. These are completely different dimensions of scale. Confusing them makes the architecture seem impossible when it's actually two separate, solvable problems.
+    </div>
+
+    <h3>Production fleet layout</h3>
+    <p>No one puts 100K connections on a single machine. The standard pattern is a fleet of <strong>gateway servers</strong> behind a load balancer. Each gateway owns a slice of connections. A pub-sub bus (Redis, Kafka, NATS) routes events between gateways when a message needs to reach users on a different machine.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Separation of concerns in a real-time system</div>
+      <div class="timeline" style="margin-top:8px;">
+        <div class="tl-item">
+          <div class="tl-title">Gateway layer — connection ownership</div>
+          <div class="tl-desc">Hold sockets, track sessions, send heartbeats, detect dead peers. No business logic. Just connections.</div>
+        </div>
+        <div class="tl-item amber">
+          <div class="tl-title">App layer — business logic</div>
+          <div class="tl-desc">Validate messages, persist to DB, determine recipients. Stateless, horizontally scalable.</div>
+        </div>
+        <div class="tl-item pink">
+          <div class="tl-title">Routing layer — event distribution</div>
+          <div class="tl-desc">Pub-sub bus (Redis pub/sub, Kafka, NATS) that tells the right gateway to push the event to the right sessions.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Fanout: the actual hard problem</h3>
+    <p>Holding sockets is easy. The real engineering challenge is <strong>fanout</strong> — when one event needs to reach 50,000 users. The system must validate the send, persist the message, look up which gateways own those sessions, enqueue work to each gateway, and write to thousands of sockets — all without letting a few slow clients block everyone else.</p>
+
+    <div class="callout amber">
+      <div class="callout-title">Presence is nastier than messaging</div>
+      Who is online right now? On which device? In which room? Which gateway owns that session? Did the user disconnect, or did their train enter a tunnel and leave a dead TCP session that won't expire for 60 seconds? Presence is distributed state management wearing a simple UI feature as a disguise.
+    </div>
+  </section>
+
+  <!-- SECTION 8 -->
+  <section id="what-breaks">
+    <div class="section-label">08 — Production Reality</div>
+    <h2>What breaks first</h2>
+    <p>In practice, you hit these problems in roughly this order — and none of them are "the server ran out of sockets":</p>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-title">1. File descriptor limit (ulimit -n)</div>
+        <div class="tl-desc">Default is 1024 on most Linux installs. Hit this before you hit any real architectural problem. Fix: <code>ulimit -n 1000000</code> or set in <code>/etc/security/limits.conf</code>.</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-title">2. Memory from TLS + buffers</div>
+        <div class="tl-desc">~60KB × 100K connections = ~6GB RAM. Fine on modern hardware, not on a cheap VM. TLS context and compression state are the biggest per-connection cost.</div>
+      </div>
+      <div class="tl-item amber">
+        <div class="tl-title">3. Slow consumers and backpressure</div>
+        <div class="tl-desc">A few clients that can't drain writes fast enough cause write buffers to fill. Without proper backpressure, the server becomes a queue by accident.</div>
+      </div>
+      <div class="tl-item amber">
+        <div class="tl-title">4. Hot fanout</div>
+        <div class="tl-desc">One celebrity, one very large room, one broadcast event — traffic shape the architecture didn't plan for. CPU and bandwidth spike simultaneously.</div>
+      </div>
+      <div class="tl-item pink">
+        <div class="tl-title">5. Reconnect storms — the worst one</div>
+        <div class="tl-desc">A deploy, network blip, or TLS incident forces 30% of clients to reconnect in 90 seconds. Steady-state connection count was fine. Recovery path wasn't.</div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="callout-title">The question to ask</div>
+      Don't just ask "how many sockets can this box hold?" Also ask: <strong>"What happens when 30% of them reconnect in 90 seconds?"</strong> — that's usually where real systems fall over.
+    </div>
+  </section>
+
+  <footer>
+    <span class="footer-note">Sockets — a deep dive · compiled from first principles</span>
+    <span class="footer-note">TCP · epoll · Redis · WebSockets</span>
+  </footer>
+
+</div>
+
+<script>
+  const sections = document.querySelectorAll('section');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08 });
+  sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>
