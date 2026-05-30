@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Binary Search Patterns Cheat Sheet</title>
+    
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -73,7 +74,107 @@
 <body>
 
 <h1>Binary Search Patterns Cheat Sheet</h1>
+<div class="pattern">
+    <h2>0. Master Rule: When to Use ans / res</h2>
 
+    <div class="visual">
+        Need BEST answer?
+            → Use ans/res
+
+        Need ANY answer?
+            → Return immediately
+    </div>
+
+    <p>
+        Use <b>ans</b> (or <b>res</b>) whenever you need to keep searching
+        after finding a valid answer.
+    </p>
+
+    <p><b>Examples:</b></p>
+    <ul>
+        <li>First Occurrence</li>
+        <li>Last Occurrence</li>
+        <li>Lower Bound</li>
+        <li>Upper Bound</li>
+        <li>Search Insert Position</li>
+        <li>First Bad Version</li>
+        <li>Minimum Days to Make Bouquets</li>
+        <li>mySqrt</li>
+        <li>Aggressive Cows</li>
+        <li>Maximum Minimum Distance</li>
+    </ul>
+
+    <pre>
+int ans = -1;
+
+while (left <= right) {
+
+    int mid = left + (right - left) / 2;
+
+    if (condition(mid)) {
+
+        ans = mid; // Save current answer
+
+        // First True / First Occurrence
+        // right = mid - 1;
+
+        // Last True / Last Occurrence
+        // left = mid + 1;
+    }
+    else {
+        // Move opposite direction
+    }
+}
+
+return ans;
+    </pre>
+
+    <h3>First True Pattern</h3>
+
+    <div class="visual">
+        F F F F T T T T
+                ^
+           First True
+    </div>
+
+    <pre>
+if (condition(mid)) {
+    ans = mid;
+    right = mid - 1;
+} else {
+    left = mid + 1;
+}
+    </pre>
+
+    <h3>Last True Pattern</h3>
+
+    <div class="visual">
+        T T T T F F F F
+              ^
+          Last True
+    </div>
+
+    <pre>
+if (condition(mid)) {
+    ans = mid;
+    left = mid + 1;
+} else {
+    right = mid - 1;
+}
+    </pre>
+
+    <h3>When NOT to Use ans/res</h3>
+
+    <pre>
+if (arr[mid] == target)
+    return mid;
+    </pre>
+
+    <p>
+        Exact Binary Search does not need ans/res because the search ends
+        immediately when the target is found.
+    </p>
+</div>
 <div class="pattern">
     <h2>1. Classic Binary Search</h2>
     <pre>
