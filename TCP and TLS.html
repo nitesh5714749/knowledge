@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>How TLS Works — Interactive Explainer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 32px 16px 60px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: #f1f5f9;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 36px;
+  }
+
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* Step pills */
+  .steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .step-btn {
+    cursor: pointer;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 20px;
+    border: 1px solid #2d3748;
+    background: #1a1f2e;
+    color: #94a3b8;
+    transition: all 0.18s ease;
+    outline: none;
+  }
+
+  .step-btn:hover { background: #242938; color: #cbd5e1; border-color: #3d4a5c; }
+
+  .step-btn.active {
+    background: #1e3a5f;
+    color: #7dd3fc;
+    border-color: #2563eb;
+  }
+
+  /* Diagram card */
+  .diagram-card {
+    background: #141824;
+    border: 1px solid #1e2535;
+    border-radius: 16px;
+    padding: 28px 24px 20px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Description card */
+  .desc-card {
+    background: #141824;
+    border: 1px solid #1e2535;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+    min-height: 80px;
+  }
+
+  .desc-card .step-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #7dd3fc;
+    margin-bottom: 8px;
+  }
+
+  .desc-card p {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #94a3b8;
+  }
+
+  .desc-card p strong { color: #e2e8f0; font-weight: 600; }
+  .desc-card p em { color: #cbd5e1; font-style: normal; font-weight: 500; }
+  .desc-card p .highlight { color: #86efac; }
+
+  /* SVG diagram */
+  #tlssvg { width: 100%; display: block; }
+
+  /* Key facts row */
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .fact-card {
+    background: #0f1117;
+    border: 1px solid #1e2535;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .fact-card .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #475569;
+    margin-bottom: 6px;
+  }
+
+  .fact-card .value {
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  /* Nav buttons */
+  .nav {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .nav-btn {
+    cursor: pointer;
+    padding: 9px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid #2d3748;
+    background: #1a1f2e;
+    color: #94a3b8;
+    transition: all 0.18s;
+  }
+
+  .nav-btn:hover { background: #242938; color: #e2e8f0; }
+  .nav-btn.primary { background: #1e3a5f; color: #7dd3fc; border-color: #2563eb; }
+  .nav-btn.primary:hover { background: #1d4275; }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 2px;
+    background: #1e2535;
+    border-radius: 2px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #7dd3fc);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  @keyframes slideRight { from { opacity:0; transform: translateX(-18px); } to { opacity:1; transform: translateX(0); } }
+  @keyframes slideLeft  { from { opacity:0; transform: translateX(18px);  } to { opacity:1; transform: translateX(0); } }
+  @keyframes fadeUp     { from { opacity:0; transform: translateY(8px);   } to { opacity:1; transform: translateY(0); } }
+
+  .anim-right { animation: slideRight 0.35s ease forwards; }
+  .anim-left  { animation: slideLeft  0.35s ease forwards; }
+  .anim-up    { animation: fadeUp     0.3s ease forwards; }
+
+  .locked-badge {
+    display: inline-block;
+    background: #14532d;
+    color: #86efac;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>How TLS Works</h1>
+  <p class="subtitle">Step-by-step: how your browser creates a secure encrypted connection</p>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="progress"></div>
+  </div>
+
+  <div class="steps" id="step-buttons"></div>
+
+  <div class="diagram-card">
+    <svg id="tlssvg" viewBox="0 0 800 260">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <!-- Client box -->
+      <rect x="30" y="80" width="145" height="64" rx="10" fill="#1e3a5f" stroke="#2563eb" stroke-width="1"/>
+      <text x="102" y="107" text-anchor="middle" fill="#7dd3fc" font-size="14" font-weight="600" font-family="-apple-system,sans-serif">Client</text>
+      <text x="102" y="126" text-anchor="middle" fill="#3b82f6" font-size="11" font-family="-apple-system,sans-serif">Browser / App</text>
+
+      <!-- Server box -->
+      <rect x="625" y="80" width="145" height="64" rx="10" fill="#2d1b69" stroke="#7c3aed" stroke-width="1"/>
+      <text x="697" y="107" text-anchor="middle" fill="#c4b5fd" font-size="14" font-weight="600" font-family="-apple-system,sans-serif">Server</text>
+      <text x="697" y="126" text-anchor="middle" fill="#7c3aed" font-size="11" font-family="-apple-system,sans-serif">paypal.com</text>
+
+      <!-- CA box -->
+      <rect x="310" y="190" width="180" height="52" rx="10" fill="#1c1a0a" stroke="#b45309" stroke-width="1"/>
+      <text x="400" y="212" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="600" font-family="-apple-system,sans-serif">Certificate Authority</text>
+      <text x="400" y="230" text-anchor="middle" fill="#b45309" font-size="11" font-family="-apple-system,sans-serif">DigiCert, Let's Encrypt…</text>
+
+      <!-- Vertical timeline dashes -->
+      <line x1="102" y1="144" x2="102" y2="185" stroke="#1e2535" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="697" y1="144" x2="697" y2="185" stroke="#1e2535" stroke-width="1" stroke-dasharray="3 3"/>
+
+      <!-- Dynamic content -->
+      <g id="arrows"></g>
+    </svg>
+  </div>
+
+  <div class="desc-card" id="desc-card">
+    <div class="step-title" id="desc-title">Welcome</div>
+    <p id="desc-body">Click any step above or use the Next button to walk through how TLS builds a secure connection from scratch.</p>
+  </div>
+
+  <div class="facts" id="facts-row"></div>
+
+  <div class="nav" style="margin-top:20px;">
+    <button class="nav-btn" id="prev-btn" onclick="prevStep()">← Back</button>
+    <button class="nav-btn primary" id="next-btn" onclick="nextStep()">Next →</button>
+  </div>
+</div>
+
+<script>
+const TOTAL = 8;
+let current = 0;
+
+const stepData = [
+  {
+    label: "Start",
+    title: "No connection yet",
+    body: "Before TLS, there is <strong>no secure channel</strong>. The client wants to talk to the server but has no way to do so safely. Anyone sitting in between could read or change the data. TLS fixes this.",
+    arrows: [],
+    facts: [
+      { label: "Security", value: "None" },
+      { label: "Connection", value: "Not established" },
+      { label: "Data visible to attacker?", value: "Yes — completely" }
+    ]
+  },
+  {
+    label: "1. TCP connect",
+    title: "Step 1 — TCP Handshake (the pipe)",
+    body: "Before TLS can start, a plain <strong>TCP connection</strong> is made using a 3-way handshake (SYN → SYN-ACK → ACK). This just creates the reliable channel. <em>No encryption yet</em> — think of it as laying down the road before sending any cars.",
+    arrows: [
+      { x1:175, y1:104, x2:623, y2:104, color:"#475569", label:"SYN →", dir:"right", delay:0 },
+      { x1:623, y1:118, x2:175, y2:118, color:"#475569", label:"← SYN-ACK", dir:"left", delay:0.15 },
+      { x1:175, y1:132, x2:623, y2:132, color:"#475569", label:"ACK →", dir:"right", delay:0.3 },
+    ],
+    facts: [
+      { label: "Protocol", value: "TCP (plain)" },
+      { label: "Purpose", value: "Reliable delivery channel" },
+      { label: "Encrypted?", value: "No — just a pipe" }
+    ]
+  },
+  {
+    label: "2. Client Hello",
+    title: "Step 2 — Client Hello",
+    body: "Client sends: <em>Hello! I support TLS 1.3 and these cipher suites. Here is a random number (client_random).</em> This is sent in <strong>plain text</strong> — no secrets yet. It's just an introduction and a list of capabilities.",
+    arrows: [
+      { x1:175, y1:112, x2:623, y2:112, color:"#059669", label:"ClientHello — TLS version, supported ciphers, client_random →", dir:"right", delay:0 },
+    ],
+    facts: [
+      { label: "Sent by", value: "Client" },
+      { label: "Contains", value: "TLS version, cipher list, random number" },
+      { label: "Encrypted?", value: "No — plain text greeting" }
+    ]
+  },
+  {
+    label: "3. Server Hello",
+    title: "Step 3 — Server Hello",
+    body: "Server replies: <em>I picked TLS 1.3 and AES-256-GCM. Here is MY random number (server_random).</em> Now both sides hold two random numbers. These will be combined later to generate the session key.",
+    arrows: [
+      { x1:623, y1:112, x2:175, y2:112, color:"#7c3aed", label:"← ServerHello — chosen cipher, server_random", dir:"left", delay:0 },
+    ],
+    facts: [
+      { label: "Sent by", value: "Server" },
+      { label: "Contains", value: "Chosen cipher suite, server_random" },
+      { label: "Why two randoms?", value: "Prevents replay attacks" }
+    ]
+  },
+  {
+    label: "4. Certificate",
+    title: "Step 4 — Server sends its Certificate",
+    body: "Server sends its <strong>SSL certificate</strong> — issued and signed by a trusted Certificate Authority (CA). The client checks: <em>is this signature valid? Does it match paypal.com?</em> This step prevents impersonation — you can't fake a certificate signed by DigiCert.",
+    arrows: [
+      { x1:623, y1:104, x2:175, y2:104, color:"#7c3aed", label:"← Certificate (public key + CA signature)", dir:"left", delay:0 },
+      { x1:310, y1:200, x2:160, y2:148, color:"#b45309", label:"✓ Client verifies signature", dir:"left", delay:0.2 },
+    ],
+    facts: [
+      { label: "Certificate signed by", value: "Trusted CA (DigiCert etc.)" },
+      { label: "Client checks", value: "Signature valid? Domain matches?" },
+      { label: "Prevents", value: "Man-in-the-middle impersonation" }
+    ]
+  },
+  {
+    label: "5. Key exchange",
+    title: "Step 5 — Key Exchange",
+    body: "Client generates a <strong>pre-master secret</strong>, encrypts it with the server's public key (from the certificate), and sends it. <em>Only the server can decrypt it</em> using its private key. Both sides now independently compute the same <strong>session key</strong> — it never travels over the wire.",
+    arrows: [
+      { x1:175, y1:112, x2:623, y2:112, color:"#059669", label:"Pre-master secret (encrypted with server's public key) →", dir:"right", delay:0 },
+    ],
+    facts: [
+      { label: "Encrypted with", value: "Server's public key" },
+      { label: "Session key sent over wire?", value: "Never — both compute it locally" },
+      { label: "Security basis", value: "Asymmetric (RSA / ECDH)" }
+    ]
+  },
+  {
+    label: "6. Finished",
+    title: "Step 6 — Finished Messages",
+    body: "Both sides send a <strong>Finished</strong> message encrypted with the new session key. If the other side can decrypt and verify it, the handshake succeeded. <em>Secure channel confirmed!</em> The TLS handshake is complete.",
+    arrows: [
+      { x1:175, y1:100, x2:623, y2:100, color:"#059669", label:"Finished (encrypted with session key) →", dir:"right", delay:0 },
+      { x1:623, y1:118, x2:175, y2:118, color:"#7c3aed", label:"← Finished (encrypted with session key)", dir:"left", delay:0.18 },
+    ],
+    facts: [
+      { label: "Encrypted with", value: "Session key (symmetric)" },
+      { label: "Purpose", value: "Confirms both sides derived same key" },
+      { label: "Handshake status", value: "Complete ✓" }
+    ]
+  },
+  {
+    label: "7. Encrypted 🔒",
+    title: "Step 7 — All data is now encrypted",
+    body: "Every HTTP request and response is now <strong>encrypted with the session key</strong>. Passwords, card numbers, account data — all appear as random gibberish to anyone intercepting. This is what <strong>HTTPS</strong> means: HTTP running inside TLS.",
+    arrows: [
+      { x1:175, y1:96,  x2:623, y2:96,  color:"#2563eb", label:"GET /account (encrypted) →", dir:"right", delay:0 },
+      { x1:623, y1:110, x2:175, y2:110, color:"#2563eb", label:"← 200 OK (encrypted)", dir:"left", delay:0.12 },
+      { x1:175, y1:124, x2:623, y2:124, color:"#2563eb", label:"POST /pay (encrypted) →", dir:"right", delay:0.24 },
+      { x1:623, y1:138, x2:175, y2:138, color:"#2563eb", label:"← Payment confirmed (encrypted)", dir:"left", delay:0.36 },
+    ],
+    facts: [
+      { label: "Encryption type", value: "Symmetric (AES-256-GCM)" },
+      { label: "Key size", value: "256 bits — practically unbreakable" },
+      { label: "HTTPS =", value: "HTTP + TLS + TCP (all three layers)" }
+    ]
+  }
+];
+
+function buildButtons() {
+  const container = document.getElementById('step-buttons');
+  stepData.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'step-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = s.label;
+    btn.onclick = () => goStep(i);
+    container.appendChild(btn);
+  });
+}
+
+function goStep(n) {
+  current = Math.max(0, Math.min(TOTAL - 1, n));
+  document.querySelectorAll('.step-btn').forEach((b, i) => b.classList.toggle('active', i === current));
+  document.getElementById('progress').style.width = ((current / (TOTAL - 1)) * 100) + '%';
+  render();
+}
+
+function nextStep() { goStep(current + 1); }
+function prevStep() { goStep(current - 1); }
+
+function render() {
+  const s = stepData[current];
+
+  // Title & description
+  const titleEl = document.getElementById('desc-title');
+  const bodyEl = document.getElementById('desc-body');
+  titleEl.className = 'step-title anim-up';
+  bodyEl.className = 'anim-up';
+  titleEl.innerHTML = s.title + (current === 7 ? '<span class="locked-badge">🔒 HTTPS</span>' : '');
+  bodyEl.innerHTML = s.body;
+
+  // Facts
+  const factsEl = document.getElementById('facts-row');
+  factsEl.innerHTML = '';
+  (s.facts || []).forEach((f, i) => {
+    const card = document.createElement('div');
+    card.className = 'fact-card anim-up';
+    card.style.animationDelay = (i * 0.06) + 's';
+    card.innerHTML = `<div class="label">${f.label}</div><div class="value">${f.value}</div>`;
+    factsEl.appendChild(card);
+  });
+
+  // Arrows
+  const ag = document.getElementById('arrows');
+  ag.innerHTML = '';
+
+  s.arrows.forEach((a, i) => {
+    const delay = a.delay || 0;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', a.x1); line.setAttribute('y1', a.y1);
+    line.setAttribute('x2', a.x2); line.setAttribute('y2', a.y2);
+    line.setAttribute('stroke', a.color);
+    line.setAttribute('stroke-width', '1.8');
+    line.setAttribute('marker-end', 'url(#arr)');
+    line.setAttribute('fill', 'none');
+    line.style.opacity = '0';
+    line.style.animation = `${a.dir === 'right' ? 'slideRight' : 'slideLeft'} 0.3s ease ${delay}s forwards`;
+    ag.appendChild(line);
+
+    // Label
+    const lx = (a.x1 + a.x2) / 2;
+    const ly = a.y1 - 6;
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', lx);
+    txt.setAttribute('y', ly);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill', a.color);
+    txt.setAttribute('font-size', '10.5');
+    txt.setAttribute('font-family', '-apple-system,BlinkMacSystemFont,sans-serif');
+    txt.style.opacity = '0';
+    txt.style.animation = `fadeUp 0.3s ease ${delay + 0.08}s forwards`;
+    txt.textContent = a.label.length > 55 ? a.label.slice(0, 52) + '…' : a.label;
+    ag.appendChild(txt);
+  });
+
+  // Nav buttons
+  document.getElementById('prev-btn').disabled = current === 0;
+  document.getElementById('next-btn').textContent = current === TOTAL - 1 ? '↺ Restart' : 'Next →';
+  document.getElementById('next-btn').onclick = current === TOTAL - 1 ? () => goStep(0) : nextStep;
+}
+
+buildButtons();
+render();
+</script>
+</body>
+</html>
